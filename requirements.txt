@@ -1,0 +1,8 @@
+# 记忆宫殿依赖
+# Phase 1: 最小依赖
+
+# HTTP 请求
+urllib3>=2.0.0
+
+# OpenClaw (可选，如果用独立部署)
+# openclaw-core>=2026.3.28
