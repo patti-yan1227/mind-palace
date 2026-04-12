@@ -57,32 +57,42 @@
 
 ## 快速开始
 
-### 1. 配置环境变量
+### 双版本说明
+
+Mind Palace 提供两个版本：
+
+| 版本 | 用途 | 部署指南 |
+|------|------|----------|
+| **OpenClaw 版本** | 腾讯云服务器部署，飞书/Telegram 消息入口 | [openclaw-skills/README.md](openclaw-skills/README.md) |
+| **Claude Code 版本** | 本地使用，Obsidian 同步 | [claude-code-skills/README.md](claude-code-skills/README.md) |
+
+### OpenClaw 版本（服务器）
 
 ```bash
+# 1. 配置环境变量
 cp .env.example .env
-# 编辑 .env 填入 OBSIDIAN_VAULT 路径和 LLM API Key
+vi .env  # 填入 OBSIDIAN_VAULT 和 API Key
+
+# 2. 创建 symlink
+cd /root/workspace/skills
+ln -s mind-palace/openclaw-skills/portal mind-palace-portal
+
+# 3. 链接到 OpenClaw
+openclaw skills link /root/workspace/skills/mind-palace-portal
 ```
 
-### 2. 安装依赖
+### Claude Code 版本（本地）
 
 ```bash
-pip install -r requirements.txt
+# 1. 配置环境变量
+cp .env.example .env
+vi .env  # 填入本地 Vault 路径和 API Key
+
+# 2. 链接 Skill
+claude skills link ./claude-code-skills/diary-skill
 ```
 
-### 3. 链接 Skills 到 OpenClaw
-
-```bash
-# 门房 Portal（实时归档）
-openclaw skills link ./skills/portal
-
-# 炼金术 Agent（凌晨批处理）
-openclaw skills link ./skills/alchemy
-
-# ... 其他 Skill
-```
-
-### 4. 测试门房
+### 测试门房
 
 ```bash
 python agents/portal_agent.py --input "测试消息" --vault "/你的/Vault/路径"
