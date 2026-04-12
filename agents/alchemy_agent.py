@@ -35,6 +35,54 @@ LINT_REPORT_DIR = '_lint_report'
 PROJECTS_DIR = '项目'
 PRIVATE_SOURCES_DIR = '_private_sources'
 
+# LLM 配置（可选，用户自行配置）
+# 方式 1: 直接在 .env 中设置 LLN_API_KEY 和 LLM_MODEL
+# 方式 2: 实现 llm_generate() 函数，调用任意 LLM API
+LLM_API_KEY = os.getenv('LLM_API_KEY', '')
+LLM_MODEL = os.getenv('LLM_MODEL', 'deepseek-chat')  # 默认用 DeepSeek（性价比高）
+USE_LLM = os.getenv('ALCHEMY_USE_LLM', 'false').lower() == 'true'  # 默认关闭，用户手动开启
+
+
+def llm_generate(prompt: str) -> str:
+    """
+    调用 LLM 生成内容（用户需自行实现或配置）
+
+    方案 A: 使用 Claude API
+    ```python
+    from anthropic import Anthropic
+    client = Anthropic(api_key=LLM_API_KEY)
+    response = client.messages.create(
+        model=LLM_MODEL,
+        max_tokens=4096,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.content[0].text
+    ```
+
+    方案 B: 使用 OpenAI 兼容 API（DeepSeek/GPT-4o Mini 等）
+    ```python
+    from openai import OpenAI
+    client = OpenAI(api_key=LLM_API_KEY, base_url="https://api.deepseek.com")
+    response = client.chat.completions.create(
+        model=LLM_MODEL,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.choices[0].message.content
+    ```
+
+    方案 C: 使用 Ollama 本地模型
+    ```python
+    import ollama
+    response = ollama.chat(model=LLM_MODEL, messages=[{"role": "user", "content": prompt}])
+    return response['message']['content']
+    ```
+    """
+    raise NotImplementedError(
+        "LLM 生成功能需用户自行配置。"
+        "请在 .env 中设置 LLM_API_KEY 和 LLM_MODEL，并实现 llm_generate() 函数。"
+        "参考上方 docstring 中的三种方案。"
+    )
+
 
 # ==================== 工具函数 ====================
 
@@ -59,7 +107,80 @@ def _today_str() -> str:
 
 # ==================== 阶段 1: 编纂日记 ====================
 
-def compile_diary(date: str, vault_path: str = None) -> str:
+DIARY_GENERATION_PROMPT = """
+你是一位专业的日记编纂师和心理分析师。请根据以下原始记录，整理成一篇结构完整、有洞察力的日记。
+
+## 输入素材
+
+### 原始碎碎念（_raw_inbox/）
+{raw_text}
+
+### 学习/行为记录（_log/）
+{log_text}
+
+## 输出要求
+
+请按以下格式输出 Markdown：
+
+```markdown
+# {date} 日记
+
+> 归档时间：{timestamp}
+> 原始素材：{count} 条
+> 学习记录：{log_count} 条
+
+---
+
+## 一、今日概览
+
+（200-300 字，用流畅的叙述风格总结这一天，保持用户原本的意思）
+
+## 二、结构化总结
+
+### （1）发生了什么 / 心情和状态
+
+（用条目式列出今天的主要事件和情绪状态）
+
+### （2）灵感与想法要点
+
+（提取用户今天的核心洞察，每条带简短说明）
+
+### （3）积极的愿望
+
+（从内容中提取用户表达的积极期待，如没有则写"暂无明确表达"）
+
+### （4）感谢的事
+
+（提取用户表达感谢的内容，如没有则写"暂无明确表达"）
+
+### （5）未完成待办
+
+（从内容中提取待办事项和悬而未决的问题）
+
+## 三、生活洞察与建议
+
+（以平衡型心理专家/人生导师的视角，给出 2-3 条分析建议）
+
+**观察到的模式：**
+（指出用户行为/情绪中值得注意的模式）
+
+**建议：**
+（给出具体可行的建议）
+
+**鼓励：**
+（基于事实的真诚鼓励，不是空洞的安慰）
+```
+
+## 注意事项
+
+1. **保持原意**：不要改变用户记录的本意，只优化表达结构
+2. **平衡型建议**：既要指出问题，也要给予肯定，不偏严厉也不偏鸡汤
+3. **具体可执行**：建议要具体，不要说"要多运动"这种空话
+4. **尊重隐私**：这是用户的私人日记，保持尊重和共情
+"""
+
+
+def compile_diary(date: str, vault_path: str = None, use_llm: bool = True) -> str:
     """
     读取指定日期的 _raw_inbox/ 文件，编纂结构化日记
     返回：日记文件路径
@@ -75,25 +196,63 @@ def compile_diary(date: str, vault_path: str = None) -> str:
     if not raw_files:
         return f"日记 {date}: 无原始输入"
 
-    entries = []
+    raw_entries = []
     for rf in raw_files:
         content = rf.read_text(encoding='utf-8')
-        entries.append(content)
+        raw_entries.append(content)
 
-    # 生成结构化日记
-    diary_content = f"# {date} 日记\n\n"
-    diary_content += f"> 归档时间：{_now_str()}\n"
-    diary_content += f"> 原始素材：{len(raw_files)} 条\n\n"
-    diary_content += "---\n\n"
+    # 读取该日期的 _log/ 记录
+    log_entries = []
+    log_file = vault / LOG_DIR / f"{datetime.now().strftime('%Y-%m')}.md"
+    if log_file.exists():
+        log_content = log_file.read_text(encoding='utf-8')
+        # 提取该日期的记录
+        import re
+        log_matches = re.findall(rf'## \[{date}\] (ingest|query)\|([^\n]+)(.*?)(?=## \[|$)', log_content, re.DOTALL)
+        for op_type, desc, details in log_matches:
+            log_entries.append(f"[{op_type}] {desc}: {details.strip()}")
 
-    # TODO: 这里可以加 LLM 提炼总结
-    diary_content += "## 原始记录\n\n"
-    for i, entry in enumerate(entries, 1):
-        diary_content += f"### {i}\n\n{entry}\n\n"
+    # 合并原始内容
+    raw_text = '\n\n'.join(raw_entries)
+    log_text = '\n'.join(log_entries) if log_entries else '无学习记录'
+
+    if use_llm:
+        # 调用 LLM 生成结构化日记
+        try:
+            prompt = DIARY_GENERATION_PROMPT.format(
+                date=date,
+                timestamp=_now_str(),
+                count=len(raw_files),
+                log_count=len(log_entries),
+                raw_text=raw_text,
+                log_text=log_text
+            )
+            structured_content = llm_generate(prompt)
+        except NotImplementedError as e:
+            # LLM 未配置，降级到兜底逻辑
+            print(f"注意：{e}")
+            structured_content = f"# {date} 日记\n\n> 归档时间：{_now_str()}\n\n**注意：** LLM 生成功能待接入\n\n---\n\n## 原始记录\n\n{raw_text}\n\n## 学习记录\n\n{log_text}"
+        except Exception as e:
+            # LLM 调用失败，降级到兜底逻辑
+            print(f"警告：LLM 生成失败 - {e}，使用兜底逻辑")
+            structured_content = f"# {date} 日记\n\n> 归档时间：{_now_str()}\n\n**注意：** LLM 生成失败，使用兜底逻辑\n\n---\n\n## 原始记录\n\n{raw_text}\n\n## 学习记录\n\n{log_text}"
+    else:
+        # 机械重组（兜底）
+        structured_content = f"# {date} 日记\n\n"
+        structured_content += f"> 归档时间：{_now_str()}\n"
+        structured_content += f"> 原始素材：{len(raw_files)} 条\n\n"
+        structured_content += "---\n\n"
+        structured_content += "## 原始记录\n\n"
+        for i, entry in enumerate(raw_entries, 1):
+            structured_content += f"### {i}\n\n{entry}\n\n"
+        if log_entries:
+            structured_content += "## 学习记录\n\n"
+            for entry in log_entries:
+                structured_content += f"- {entry}\n"
 
     # 写入文件
     diary_file = diary_dir / f"{date}.md"
-    diary_file.write_text(diary_content, encoding='utf-8')
+    diary_file.write_text(structured_content, encoding='utf-8')
 
     return str(diary_file.relative_to(vault))
 
