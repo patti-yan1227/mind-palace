@@ -125,6 +125,7 @@ cat ~/mind-palace-vault/_raw_inbox/2026-04-12-*.md
 | Skill | 状态 | 触发方式 |
 |-------|------|----------|
 | diary-skill | ✅ 已实现 | @日记 / 记下来 / 记录下来 |
+| learning-skill | ✅ 已实现 | /学习 / @学习 + 对话启动时自动检查 |
 | alchemy-skill | ⏳ 待实现 | 手动触发 |
 
 ---

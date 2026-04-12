@@ -30,6 +30,60 @@
 
 ---
 
+## 启动检查：学习提醒（每次对话自动执行）
+
+每次 Claude Code 对话**启动时**，静默执行：
+```
+python agents/learning_agent.py --action check_and_notify --vault "YOUR_VAULT_PATH"
+```
+
+如果输出**非空**，主动向用户展示提醒（例如：未关闭 session、未处理 highlights、搁置过久的问题）。
+如果输出为空，不做任何提示，继续正常对话。
+
+---
+
+## 学习技能（Learning Agent）
+
+当用户输入包含以下任意触发词时：
+- `/学习`
+- `@学习`
+
+**执行步骤：**
+
+1. 调用推荐命令，获取项目列表：
+   ```
+   python agents/learning_agent.py --action recommend --vault "YOUR_VAULT_PATH"
+   ```
+2. 向用户展示推荐项目 + 各项目的推荐模式，询问意图
+3. 用户选择项目和模式后，加载全量上下文：
+   ```
+   python agents/learning_agent.py --action load --project "<项目名>" --vault "YOUR_VAULT_PATH"
+   ```
+4. 开启 session，进入对应模式的交互流程（见 `claude-code-skills/learning-skill/SKILL.md`）
+
+**五种学习模式（用户选择，Claude 给建议）：**
+- **A — 画版图**：新话题/新书，提问框架→更新 map.md→生成理解题→逐题作答
+- **B — 回忆+推进**：不看笔记先回忆→对比 notes/→推进 questions.md 未解决问题
+- **C — 处理Highlights**：逐条过 highlights，问"你为什么划这句"→感知是否保存
+- **D — 复习旧笔记**：随机抽概念名自测→对比笔记→提议更新
+- **E — 问题驱动探索**：用户带着问题→先搜已有内容→报告缺口→决定归入项目
+
+**自然感知保存（不依赖魔法词汇）：**
+
+| 信号 | Claude 的行动 |
+|------|--------------|
+| 用户表达了清晰理解 | 提议起名保存为笔记 |
+| 用户提出未解问题 | 提议记入问题池 |
+| 用户确认（是/好/存） | 调用 save_note 或 append_question |
+
+**关闭 session：**
+用户说"结束"/"今天到这"时调用：
+```
+python agents/learning_agent.py --action close_session --project "<项目名>" --vault "YOUR_VAULT_PATH"
+```
+
+---
+
 ## 目录权限速查
 
 | 目录 | 写入权限 | 何时写入 |
