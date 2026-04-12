@@ -603,8 +603,94 @@ def write_change_log(project_name: str, changes: dict, vault_path: str = None) -
     return str(month_file.relative_to(vault))
 
 
+def update_map_md(project_name: str, vault_path: str = None) -> str:
+    """
+    更新项目的 map.md，自动索引项目内的笔记和关系
+    返回：map.md 文件路径
+    """
+    proj = _project_dir(project_name, vault_path)
+    map_file = proj / MAP_FILENAME
+    notes_dir = proj / NOTES_SUBDIR
+    dialogue_dir = proj / DIALOGUE_SUBDIR
+    q_file = proj / QUESTIONS_FILENAME
+
+    if not map_file.exists():
+        return None
+
+    # 读取现有 map.md 内容
+    map_content = map_file.read_text(encoding='utf-8')
+
+    # 扫描所有 notes
+    notes_index = []
+    if notes_dir.exists():
+        for note_file in sorted(notes_dir.glob('*.md')):
+            concept = note_file.stem
+            lines = note_file.read_text(encoding='utf-8').splitlines()
+            # 提取第一个非标题行作为摘要
+            summary = next((l for l in lines if l.strip() and not l.startswith('#')), '')[:150]
+            notes_index.append({'concept': concept, 'summary': summary})
+
+    # 扫描开放问题
+    open_questions = []
+    if q_file.exists():
+        for line in q_file.read_text(encoding='utf-8').splitlines():
+            if line.strip().startswith('- [ ]'):
+                open_questions.append(line.strip()[5:].strip())
+
+    # 最近对话
+    recent_dialogue = []
+    if dialogue_dir.exists():
+        for df in sorted(dialogue_dir.glob('*.md'), reverse=True)[:3]:
+            text = df.read_text(encoding='utf-8')
+            recent_dialogue.append({
+                'date': df.stem,
+                'preview': text[:200] + ('...' if len(text) > 200 else '')
+            })
+
+    # 构建索引部分
+    index_section = "## 五、项目索引（自动生成）\n\n"
+    index_section += "### 笔记索引\n\n"
+
+    if notes_index:
+        index_section += "| 概念 | 摘要 |\n|------|------|\n"
+        for note in notes_index:
+            index_section += f"| [[notes/{note['concept']}.md]] | {note['summary']} |\n"
+    else:
+        index_section += "（暂无笔记）\n"
+
+    index_section += "\n### 开放问题\n\n"
+    if open_questions:
+        for q in open_questions[:10]:
+            index_section += f"- [ ] {q}\n"
+    else:
+        index_section += "（暂无开放问题）\n"
+
+    index_section += "\n### 最近对话\n\n"
+    if recent_dialogue:
+        for d in recent_dialogue:
+            index_section += f"- [[dialogue/{d['date']}.md]] ({d['date']}): {d['preview']}\n"
+    else:
+        index_section += "（暂无对话记录）\n"
+
+    # 检查是否已有"五、项目索引"部分，有则替换，无则追加
+    if "## 五、项目索引" in map_content:
+        # 找到下一章节的开始
+        parts = map_content.split('## 五、项目索引', 1)
+        remaining = parts[1].split('\n\n## ')[1:] if '\n\n## ' in parts[1] else []
+        if remaining:
+            map_content = parts[0] + index_section + '\n\n## ' + '\n\n## '.join(remaining)
+        else:
+            map_content = parts[0] + index_section
+    else:
+        # 追加到末尾
+        map_content = map_content.rstrip() + '\n\n' + index_section
+
+    map_file.write_text(map_content, encoding='utf-8')
+    return str(map_file.relative_to(_get_vault(vault_path)))
+
+
 def close_session(project_name: str, vault_path: str = None) -> str:
-    """关闭 session，扫描变更写入 _log/，同时写入 _raw_inbox/，返回摘要文本。"""
+    """关闭 session，扫描变更写入 _log/，同时写入 _raw_inbox/，更新 map.md，返回摘要文本。"""
     session_file = _project_dir(project_name, vault_path) / SESSION_FILENAME
     if not session_file.exists():
         return f"项目 [{project_name}] 没有进行中的 session"
@@ -618,6 +704,11 @@ def close_session(project_name: str, vault_path: str = None) -> str:
     if changes['sources'] or changes['notes'] or changes['dialogues']:
         log_path = write_change_log(project_name, changes, vault_path)
         print(f"变更报告已写入：{log_path}")
+
+    # 更新 map.md（自动索引项目内的笔记和关系）
+    map_path = update_map_md(project_name, vault_path)
+    if map_path:
+        print(f"map.md 已更新：{map_path}")
 
     # 写入 _raw_inbox/
     summary = record_session(

@@ -20,6 +20,10 @@ import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+from dotenv import load_dotenv
+
+# 加载 .env 文件（项目根目录）
+load_dotenv()
 
 # ==================== 配置 ====================
 
@@ -36,52 +40,46 @@ PROJECTS_DIR = '项目'
 PRIVATE_SOURCES_DIR = '_private_sources'
 
 # LLM 配置（可选，用户自行配置）
-# 方式 1: 直接在 .env 中设置 LLN_API_KEY 和 LLM_MODEL
-# 方式 2: 实现 llm_generate() 函数，调用任意 LLM API
 LLM_API_KEY = os.getenv('LLM_API_KEY', '')
-LLM_MODEL = os.getenv('LLM_MODEL', 'deepseek-chat')  # 默认用 DeepSeek（性价比高）
+LLM_MODEL = os.getenv('LLM_MODEL', 'claude-sonnet-4-5-20251001')
+LLM_API_BASE_URL = os.getenv('LLM_API_BASE_URL', 'https://api.anthropic.com')
 USE_LLM = os.getenv('ALCHEMY_USE_LLM', 'false').lower() == 'true'  # 默认关闭，用户手动开启
 
 
 def llm_generate(prompt: str) -> str:
     """
-    调用 LLM 生成内容（用户需自行实现或配置）
-
-    方案 A: 使用 Claude API
-    ```python
-    from anthropic import Anthropic
-    client = Anthropic(api_key=LLM_API_KEY)
-    response = client.messages.create(
-        model=LLM_MODEL,
-        max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    return response.content[0].text
-    ```
-
-    方案 B: 使用 OpenAI 兼容 API（DeepSeek/GPT-4o Mini 等）
-    ```python
-    from openai import OpenAI
-    client = OpenAI(api_key=LLM_API_KEY, base_url="https://api.deepseek.com")
-    response = client.chat.completions.create(
-        model=LLM_MODEL,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    return response.choices[0].message.content
-    ```
-
-    方案 C: 使用 Ollama 本地模型
-    ```python
-    import ollama
-    response = ollama.chat(model=LLM_MODEL, messages=[{"role": "user", "content": prompt}])
-    return response['message']['content']
-    ```
+    调用 LLM 生成内容（支持 Anthropic 兼容接口，如通义千问）
     """
-    raise NotImplementedError(
-        "LLM 生成功能需用户自行配置。"
-        "请在 .env 中设置 LLM_API_KEY 和 LLM_MODEL，并实现 llm_generate() 函数。"
-        "参考上方 docstring 中的三种方案。"
-    )
+    try:
+        from anthropic import Anthropic
+        client = Anthropic(api_key=LLM_API_KEY, base_url=LLM_API_BASE_URL)
+        response = client.messages.create(
+            model=LLM_MODEL,
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        # 处理返回内容（兼容不同 LLM 的返回格式）
+        # 通义千问可能返回 ThinkingBlock 和 TextBlock 的混合
+        result_parts = []
+        for block in response.content:
+            block_type = getattr(block, 'type', None)
+            # 跳过 thinking 块，只保留 text 块
+            if block_type == 'thinking':
+                continue
+            elif block_type == 'text':
+                result_parts.append(getattr(block, 'text', ''))
+            elif hasattr(block, 'text'):
+                result_parts.append(block.text)
+            else:
+                # 其他类型尝试直接获取内容
+                result_parts.append(str(block))
+        return ''.join(result_parts)
+    except ImportError:
+        raise ImportError(
+            "请安装 anthropic SDK: pip install anthropic"
+        )
+    except Exception as e:
+        raise RuntimeError(f"LLM 调用失败：{e}")
 
 
 # ==================== 工具函数 ====================
@@ -120,9 +118,8 @@ DIARY_GENERATION_PROMPT = """
 
 ## 输出要求
 
-请按以下格式输出 Markdown：
+请按以下格式输出 Markdown（**不要输出任何额外的标题或 markdown 代码块标记**）：
 
-```markdown
 # {date} 日记
 
 > 归档时间：{timestamp}
@@ -169,7 +166,6 @@ DIARY_GENERATION_PROMPT = """
 
 **鼓励：**
 （基于事实的真诚鼓励，不是空洞的安慰）
-```
 
 ## 注意事项
 
@@ -177,6 +173,7 @@ DIARY_GENERATION_PROMPT = """
 2. **平衡型建议**：既要指出问题，也要给予肯定，不偏严厉也不偏鸡汤
 3. **具体可执行**：建议要具体，不要说"要多运动"这种空话
 4. **尊重隐私**：这是用户的私人日记，保持尊重和共情
+5. **格式要求**：直接输出日记内容，不要加 ```markdown 包裹，不要输出额外的日期标题
 """
 
 
@@ -355,7 +352,7 @@ def update_index_md(vault_path: str = None) -> str:
     # 收集各部分内容
     index_sections = {
         'diary': [],
-        'projects': {},
+        'projects': [],  # 只列出 map.md 入口
         'compiled': {'概念': [], '人物': [], '关联': []},
         'social': [],
         'biometrics': [],
@@ -371,28 +368,21 @@ def update_index_md(vault_path: str = None) -> str:
                 'title': f.stem
             })
 
-    # 项目
+    # 项目（只收集 map.md 作为入口）
     if projects_dir.exists():
         for proj in projects_dir.iterdir():
             if not proj.is_dir():
                 continue
-            proj_files = []
-            # map.md
             map_file = proj / 'map.md'
             if map_file.exists():
-                proj_files.append({'path': f'项目/{proj.name}/map.md', 'title': '知识版图'})
-            # notes/
-            notes_dir = proj / 'notes'
-            if notes_dir.exists():
-                for note in sorted(notes_dir.glob('*.md')):
-                    proj_files.append({'path': f'项目/{proj.name}/notes/{note.name}', 'title': note.stem})
-            # dialogue/
-            dialogue_dir = proj / 'dialogue'
-            if dialogue_dir.exists():
-                for d in sorted(dialogue_dir.glob('*.md'), reverse=True)[:5]:
-                    proj_files.append({'path': f'项目/{proj.name}/dialogue/{d.name}', 'title': d.stem})
-            if proj_files:
-                index_sections['projects'][proj.name] = proj_files
+                # 读取 map.md 的第一行作为描述
+                map_content = map_file.read_text(encoding='utf-8')
+                first_line = map_content.split('\n')[0].lstrip('#').strip()
+                index_sections['projects'].append({
+                    'path': f'项目/{proj.name}/map.md',
+                    'title': proj.name,
+                    'desc': first_line
+                })
 
     # _compiled/
     if compiled_dir.exists():
@@ -468,14 +458,16 @@ def generate_index_content(sections: dict) -> str:
         content += "| 日期 | 摘要 |\n|------|------|\n| （暂无） | - |\n"
     content += "\n---\n\n"
 
-    # 项目
+    # 项目（只列出 map.md 入口）
     content += "## 项目\n\n"
-    for proj_name, files in sections['projects'].items():
-        content += f"### {proj_name}\n\n"
-        content += "| 页面 | 摘要 |\n|------|------|\n"
-        for f in files[:10]:
-            content += f"| [[{f['path']}]] | {f['title']} |\n"
-        content += "\n"
+    if sections['projects']:
+        content += "| 项目 | 知识版图 | 简介 |\n|------|----------|------|\n"
+        for proj in sections['projects']:
+            desc = proj.get('desc', '')[:50] + '...' if len(proj.get('desc', '')) > 50 else proj.get('desc', '-')
+            content += f"| **{proj['title']}** | [[{proj['path']}]] | {desc} |\n"
+    else:
+        content += "| 项目 | 知识版图 | 简介 |\n|------|----------|------|\n| （暂无） | - | - |\n"
+    content += "\n---\n\n"
 
     # 编译索引
     content += "## 编译索引 (_compiled)\n\n"
