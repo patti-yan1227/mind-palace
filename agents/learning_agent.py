@@ -492,8 +492,119 @@ def update_session_activity(project_name: str, vault_path: str = None, **kwargs)
     session_file.write_text(json.dumps(session, ensure_ascii=False, indent=2), encoding='utf-8')
 
 
+def scan_session_changes(project_name: str, vault_path: str = None) -> dict:
+    """
+    扫描 session 期间的变更：
+    - _private_sources/<项目>/ 新增 .md 文件
+    - 项目/notes/ 新增 .md
+    - 项目/dialogue/ 新增 .md
+    返回：{sources: [], notes: [], dialogues: []}
+    """
+    proj = _project_dir(project_name, vault_path)
+    sources = _sources_dir(project_name, vault_path)
+
+    # 读取 session 开始时间
+    session_file = proj / SESSION_FILENAME
+    if not session_file.exists():
+        return {'sources': [], 'notes': [], 'dialogues': []}
+
+    session = json.loads(session_file.read_text(encoding='utf-8'))
+    started = datetime.fromisoformat(session.get('started_at', _now_str()))
+
+    changes = {
+        'sources': [],
+        'notes': [],
+        'dialogues': []
+    }
+
+    # 扫描 _private_sources/<项目>/
+    if sources.exists():
+        for f in sources.rglob('*.md'):
+            mtime = datetime.fromtimestamp(f.stat().st_mtime)
+            if mtime > started:
+                rel = f.relative_to(sources)
+                changes['sources'].append(str(rel))
+
+    # 扫描 notes/
+    notes_dir = proj / NOTES_SUBDIR
+    if notes_dir.exists():
+        for f in notes_dir.glob('*.md'):
+            mtime = datetime.fromtimestamp(f.stat().st_mtime)
+            if mtime > started:
+                changes['notes'].append(f'notes/{f.name}')
+
+    # 扫描 dialogue/
+    dialogue_dir = proj / DIALOGUE_SUBDIR
+    if dialogue_dir.exists():
+        for f in dialogue_dir.glob('*.md'):
+            mtime = datetime.fromtimestamp(f.stat().st_mtime)
+            if mtime > started:
+                changes['dialogues'].append(f'dialogue/{f.name}')
+
+    return changes
+
+
+def write_change_log(project_name: str, changes: dict, vault_path: str = None) -> str:
+    """
+    将变更报告写入 _log/YYYY-MM.md
+    返回：写入的文件路径
+    """
+    vault = _get_vault(vault_path)
+    log_dir = vault / '_log'
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    now = datetime.now()
+    month_file = log_dir / f"{now.strftime('%Y-%m')}.md"
+
+    # 读取现有内容
+    existing = ''
+    if month_file.exists():
+        existing = month_file.read_text(encoding='utf-8')
+
+    # 构建新记录
+    timestamp = now.strftime('%Y-%m-%d')
+    time_str = now.strftime('%H:%M')
+
+    lines = [
+        f"\n## [{timestamp}] ingest | {project_name} 学习 session",
+        f"- 时间：{time_str}",
+    ]
+
+    if changes['sources']:
+        lines.append("- 新增素材:")
+        for s in changes['sources']:
+            lines.append(f"  - `_private_sources/{project_name}/{s}`")
+
+    if changes['notes']:
+        lines.append("- 新增笔记:")
+        for n in changes['notes']:
+            lines.append(f"  - `项目/{project_name}/{n}`")
+
+    if changes['dialogues']:
+        lines.append("- 新增对话:")
+        for d in changes['dialogues']:
+            lines.append(f"  - `项目/{project_name}/{d}`")
+
+    if not changes['sources'] and not changes['notes'] and not changes['dialogues']:
+        lines.append("- 无新增文件")
+
+    new_entry = '\n'.join(lines) + '\n'
+
+    # 找到"## 操作记录"之后插入
+    if '## 操作记录' in existing:
+        parts = existing.split('## 操作记录', 1)
+        new_content = parts[0] + '## 操作记录\n\n' + new_entry + parts[1]
+    else:
+        # 没有操作记录章节，在文件末尾添加
+        new_content = existing.rstrip() + '\n\n' + new_entry
+
+    month_file.write_text(new_content, encoding='utf-8')
+
+    return str(month_file.relative_to(vault))
+
+
 def close_session(project_name: str, vault_path: str = None) -> str:
-    """关闭 session，写入 _raw_inbox/，返回摘要文本。"""
+    """关闭 session，扫描变更写入 _log/，同时写入 _raw_inbox/，返回摘要文本。"""
     session_file = _project_dir(project_name, vault_path) / SESSION_FILENAME
     if not session_file.exists():
         return f"项目 [{project_name}] 没有进行中的 session"
@@ -502,6 +613,13 @@ def close_session(project_name: str, vault_path: str = None) -> str:
     started = datetime.fromisoformat(session.get('started_at', _now_str()))
     duration_min = int((datetime.now() - started).total_seconds() / 60)
 
+    # 扫描变更并写入 _log/
+    changes = scan_session_changes(project_name, vault_path)
+    if changes['sources'] or changes['notes'] or changes['dialogues']:
+        log_path = write_change_log(project_name, changes, vault_path)
+        print(f"变更报告已写入：{log_path}")
+
+    # 写入 _raw_inbox/
     summary = record_session(
         project_name=project_name,
         duration_min=duration_min,
