@@ -1,0 +1,43 @@
+# 记忆宫殿 Mind Palace
+
+> 每次对话开始时请先读取 `_SYSTEM_RULES.md`，遵守所有规则后再执行任何操作。
+
+---
+
+## 门房技能：日记归档（Portal Agent）
+
+当用户输入包含以下任意触发词时：
+- `@日记`
+- `记下来`
+- `记录下来`
+- 或消息匹配 `.*日记.*` 模式
+
+**执行步骤：**
+
+1. 提取用户要记录的完整内容（去掉触发词本身）
+2. 调用归档命令：
+   ```
+   python agents/portal_agent.py --input "<内容>" --vault "YOUR_VAULT_PATH"
+   ```
+   > `YOUR_VAULT_PATH` 替换为你本地 Vault 的绝对路径，例如：
+   > - Windows: `C:\Users\yourname\mind-palace-vault`
+   > - Mac/Linux: `/Users/yourname/mind-palace-vault`
+3. 向用户确认归档成功，并告知写入的文件路径（如 `_raw_inbox/2026-04-12-14.md`）
+
+**核心约束（不可妥协）：**
+- Append-Only：严禁修改或删除 `_raw_inbox/` 中任何已写入内容
+- 白天只写 `_raw_inbox/`，不触碰 `日记/`、`_compiled/` 等其他目录
+
+---
+
+## 目录权限速查
+
+| 目录 | 写入权限 | 何时写入 |
+|------|----------|----------|
+| `_raw_inbox/` | Portal Agent（本 session） | 实时 |
+| `_private_sources/` | 仅用户手动 | 手动 |
+| `日记/` | 炼金术 Agent | 凌晨 T-1 批处理（待实现） |
+| `项目/` | 用户 + 学习 Agent | 主动发起 |
+| `_compiled/` | 炼金术 Agent | 凌晨 T-1 批处理（待实现） |
+| `_social_graph/review/` | 战略复盘 Agent | 周末闭门会 |
+| `_persona/` | 战略复盘 Agent | 周末闭门会 |
