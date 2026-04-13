@@ -182,12 +182,18 @@ def compile_diary(date: str, vault_path: str = None, use_llm: bool = True) -> st
     """
     读取指定日期的 _raw_inbox/ 文件，编纂结构化日记
     返回：日记文件路径
+
+    注：日记按 年/月/ 分层目录组织，如：日记/2026/04/2026-04-13.md
     """
     vault = _get_vault(vault_path)
     raw_dir = vault / RAW_INBOX_DIR
     diary_dir = vault / DIARY_DIR
 
-    diary_dir.mkdir(parents=True, exist_ok=True)
+    # 按年/月分层目录
+    year = date[0:4]
+    month = date[5:7]
+    target_dir = diary_dir / year / month
+    target_dir.mkdir(parents=True, exist_ok=True)
 
     # 读取该日期所有 raw 文件
     raw_files = sorted(raw_dir.glob(f"{date}*.md"))
@@ -248,8 +254,8 @@ def compile_diary(date: str, vault_path: str = None, use_llm: bool = True) -> st
             for entry in log_entries:
                 structured_content += f"- {entry}\n"
 
-    # 写入文件
-    diary_file = diary_dir / f"{date}.md"
+    # 写入文件（按年/月分层）
+    diary_file = target_dir / f"{date}.md"
     diary_file.write_text(structured_content, encoding='utf-8')
 
     return str(diary_file.relative_to(vault))
@@ -310,7 +316,6 @@ def update_index_md(vault_path: str = None) -> str:
 
     # 收集各部分内容
     index_sections = {
-        'diary': [],
         'projects': [],  # 只列出 map.md 入口
         'compiled': {'概念': [], '人物': [], '关联': []},
         'social': [],
@@ -318,14 +323,6 @@ def update_index_md(vault_path: str = None) -> str:
         'sources': {},
         'logs': []
     }
-
-    # 日记
-    if diary_dir.exists():
-        for f in sorted(diary_dir.glob('*.md'), reverse=True)[:30]:
-            index_sections['diary'].append({
-                'path': f'日记/{f.name}',
-                'title': f.stem
-            })
 
     # 项目（只收集 map.md 作为入口）
     if projects_dir.exists():
@@ -407,15 +404,11 @@ def generate_index_content(sections: dict) -> str:
     content += "> 维护者：炼金术 Agent（T-1 批处理自动更新）\n\n"
     content += "---\n\n"
 
-    # 日记
+    # 日记（简化版，直接跳转到完整索引）
     content += "## 日记\n\n"
-    if sections['diary']:
-        content += "| 日期 | 摘要 |\n|------|------|\n"
-        for d in sections['diary'][:10]:
-            content += f"| [[{d['path']}]] | {d['title']} |\n"
-    else:
-        content += "| 日期 | 摘要 |\n|------|------|\n| （暂无） | - |\n"
-    content += "\n---\n\n"
+    content += "> 📅 完整索引：**[[日记/索引]]**\n>\n"
+    content += "> 日记按年/月组织：`日记/YYYY/MM/DD.md`\n\n"
+    content += "---\n\n"
 
     # 项目（只列出 map.md 入口）
     content += "## 项目\n\n"

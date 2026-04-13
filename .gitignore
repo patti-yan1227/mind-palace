@@ -59,6 +59,10 @@ temp/
 # Test scripts
 test_*.py
 
+# One-off migration scripts
+fix_*.py
+convert_*.py
+
 # Memory Palace specific
 _raw_inbox/
 _private_sources/
