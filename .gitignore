@@ -56,6 +56,9 @@ CLAUDE.md
 tmp/
 temp/
 
+# Test scripts
+test_*.py
+
 # Memory Palace specific
 _raw_inbox/
 _private_sources/
