@@ -4,15 +4,16 @@
 
 职责：
 1. T-1 批处理：每天凌晨 00:00 处理昨日数据
-2. 六阶段流水线：
+2. 五阶段流水线（记录机器，不做战略判断）：
    ① 编纂日记：读取 T-1 _raw_inbox/ → 日记/{date}.md
-   ② 萃取金砖：从日记/项目变动提取核心洞察 → 暂存区
-   ③ 读取变更报告：从 _log/ 读取昨日学习 session 的变更
-   ④ 编译跨域索引：更新 _index.md 和 _compiled/
-   ⑤ 记录人际互动：→ _social_graph/log/
-   ⑥ 记录体征数据：→ _biometrics/log/
-   ⑦ Lint 巡检：→ _lint_report/{date}.md
+   ② 编译跨域索引：更新 _index.md 和 _compiled/
+   ③ 记录人际互动：→ _social_graph/log/
+   ④ 记录体征数据：→ _biometrics/log/
+   ⑤ Lint 巡检：→ _lint_report/{date}.md
 3. 异常即停：任一阶段异常立刻终止并告警
+
+注：萃取金砖（高价值内容提取）已移至每周复盘 Agent（review_agent.py），
+    由人机共决写入 _persona/ Persona Engine。
 """
 
 import json
@@ -254,49 +255,7 @@ def compile_diary(date: str, vault_path: str = None, use_llm: bool = True) -> st
     return str(diary_file.relative_to(vault))
 
 
-# ==================== 阶段 2: 萃取金砖 ====================
-
-def extract_insights(date: str, vault_path: str = None) -> list:
-    """
-    从日记和项目变动中提取核心洞察（金砖）
-    返回：[{concept, summary, source}]
-    """
-    vault = _get_vault(vault_path)
-    diary_dir = vault / DIARY_DIR
-    projects_dir = vault / PROJECTS_DIR
-
-    insights = []
-
-    # 读取日记
-    diary_file = diary_dir / f"{date}.md"
-    if diary_file.exists():
-        # TODO: 用 LLM 萃取洞察
-        pass
-
-    # 扫描项目 notes/ 的新文件
-    if projects_dir.exists():
-        for proj in projects_dir.iterdir():
-            if not proj.is_dir():
-                continue
-            notes_dir = proj / 'notes'
-            if notes_dir.exists():
-                for note in notes_dir.glob('*.md'):
-                    mtime = datetime.fromtimestamp(note.stat().st_mtime)
-                    if mtime.strftime('%Y-%m-%d') == date:
-                        # 新笔记，提取首段作为洞察
-                        content = note.read_text(encoding='utf-8')
-                        lines = [l for l in content.splitlines() if l.strip() and not l.startswith('#')]
-                        summary = lines[0][:200] if lines else ''
-                        insights.append({
-                            'concept': note.stem,
-                            'summary': summary,
-                            'source': f'项目/{proj.name}/notes/{note.name}'
-                        })
-
-    return insights
-
-
-# ==================== 阶段 3: 读取变更报告 ====================
+# ==================== 阶段 2（内部辅助）: 读取变更报告 ====================
 
 def read_change_log(date: str, vault_path: str = None) -> dict:
     """
@@ -590,51 +549,139 @@ def update_compiled(vault_path: str = None) -> list:
     return updated
 
 
-# ==================== 阶段 5: 记录人际互动 ====================
+# ==================== 阶段 3: 记录人际互动 ====================
+
+SOCIAL_EXTRACTION_PROMPT = """
+你是一位人际关系分析助手。请从以下日记中提取所有涉及真实人物的互动事实。
+
+## 日记内容
+
+{diary_content}
+
+## 输出要求
+
+只输出 Markdown，格式如下（**不要输出任何额外标题或代码块标记**）：
+
+## 互动记录
+
+| 人物 | 互动类型 | 摘要 | 情感色彩 |
+|------|----------|------|----------|
+（每行一条互动，互动类型选：聊天/合作/冲突/见面/提及/其他）
+（情感色彩选：积极/中性/消极）
+
+## 备注
+
+（如果没有明确的人际互动，写"本日无明确人际互动记录"）
+
+## 注意事项
+
+- 只记录真实人物，不记录虚拟角色或泛指
+- 只记录事实，不做主观评价
+- 如果日记中完全没有提到人物，输出"本日无明确人际互动记录"
+"""
+
 
 def record_social_interactions(date: str, vault_path: str = None) -> str:
     """
-    从日记/raw 中提取人际互动事实
+    从日记中提取人际互动事实（LLM 驱动）
     返回：文件路径
     """
     vault = _get_vault(vault_path)
     social_dir = vault / SOCIAL_GRAPH_LOG_DIR
     social_dir.mkdir(parents=True, exist_ok=True)
 
-    # TODO: 从日记中提取人物互动
-    # 这里先创建占位文件
-
     log_file = social_dir / f"{date}.md"
-    content = f"# {date} 人际互动\n\n"
-    content += f"> 归档时间：{_now_str()}\n\n"
-    content += "---\n\n"
-    content += "## 互动记录\n\n（待提取）\n"
-    log_file.write_text(content, encoding='utf-8')
 
+    # 读取日记
+    diary_file = vault / DIARY_DIR / f"{date}.md"
+    diary_content = diary_file.read_text(encoding='utf-8') if diary_file.exists() else ""
+
+    header = f"# {date} 人际互动\n\n> 归档时间：{_now_str()}\n\n---\n\n"
+
+    if not diary_content:
+        content = header + "## 互动记录\n\n本日无日记，跳过提取。\n"
+    elif USE_LLM:
+        try:
+            prompt = SOCIAL_EXTRACTION_PROMPT.format(diary_content=diary_content)
+            extracted = llm_generate(prompt)
+            content = header + extracted
+        except Exception as e:
+            print(f"警告：人际互动 LLM 提取失败 - {e}，使用占位内容")
+            content = header + "## 互动记录\n\n（LLM 提取失败，请手动检查）\n"
+    else:
+        content = header + "## 互动记录\n\n（ALCHEMY_USE_LLM=false，跳过自动提取）\n"
+
+    log_file.write_text(content, encoding='utf-8')
     return str(log_file.relative_to(vault))
 
 
-# ==================== 阶段 6: 记录体征数据 ====================
+# ==================== 阶段 4: 记录体征数据 ====================
+
+BIOMETRICS_EXTRACTION_PROMPT = """
+你是一位健康数据分析助手。请从以下日记中提取所有与身体状态相关的信息。
+
+## 日记内容
+
+{diary_content}
+
+## 输出要求
+
+只输出 Markdown，格式如下（**不要输出任何额外标题或代码块标记**）：
+
+## 数据记录
+
+| 维度 | 数据 | 说明 |
+|------|------|------|
+| 睡眠 | （时长/质量，如：7h/良好） | （原文依据） |
+| 运动 | （类型+时长，如：散步30min） | （原文依据） |
+| 情绪 | （描述+色彩，如：焦虑/负面） | （原文依据） |
+| 精力 | （1-10分，如：8/10） | （原文依据） |
+| 饮食 | （有异常才填，如：暴食/节食） | （原文依据） |
+| 其他 | （头痛/疲劳等症状） | （原文依据） |
+
+## 趋势备注
+
+（如有明显异常或值得关注的模式，在此说明；如无则写"无异常"）
+
+## 注意事项
+
+- 只记录日记中明确提到的信息，不推断
+- 没有提到的维度填"未记录"
+- 数据要精简，一行一条
+"""
+
 
 def record_biometrics(date: str, vault_path: str = None) -> str:
     """
-    从日记/raw 中提取体征数据
+    从日记中提取体征数据（LLM 驱动）
     返回：文件路径
     """
     vault = _get_vault(vault_path)
     bio_dir = vault / BIOMETRICS_LOG_DIR
     bio_dir.mkdir(parents=True, exist_ok=True)
 
-    # TODO: 从日记中提取身体数据
-    # 这里先创建占位文件
-
     log_file = bio_dir / f"{date}.md"
-    content = f"# {date} 体征数据\n\n"
-    content += f"> 归档时间：{_now_str()}\n\n"
-    content += "---\n\n"
-    content += "## 数据记录\n\n（待提取）\n"
-    log_file.write_text(content, encoding='utf-8')
 
+    # 读取日记
+    diary_file = vault / DIARY_DIR / f"{date}.md"
+    diary_content = diary_file.read_text(encoding='utf-8') if diary_file.exists() else ""
+
+    header = f"# {date} 体征数据\n\n> 归档时间：{_now_str()}\n\n---\n\n"
+
+    if not diary_content:
+        content = header + "## 数据记录\n\n本日无日记，跳过提取。\n"
+    elif USE_LLM:
+        try:
+            prompt = BIOMETRICS_EXTRACTION_PROMPT.format(diary_content=diary_content)
+            extracted = llm_generate(prompt)
+            content = header + extracted
+        except Exception as e:
+            print(f"警告：体征数据 LLM 提取失败 - {e}，使用占位内容")
+            content = header + "## 数据记录\n\n（LLM 提取失败，请手动检查）\n"
+    else:
+        content = header + "## 数据记录\n\n（ALCHEMY_USE_LLM=false，跳过自动提取）\n"
+
+    log_file.write_text(content, encoding='utf-8')
     return str(log_file.relative_to(vault))
 
 
@@ -707,8 +754,10 @@ def lint_check(vault_path: str = None) -> str:
 
 def run_full_pipeline(date: str = None, vault_path: str = None) -> dict:
     """
-    执行完整的六阶段流水线
-    返回：{stage1, stage2, stage3, stage4, stage5, stage6, stage7}
+    执行完整的五阶段流水线
+    返回：{stage1, stage2, stage3, stage4, stage5}
+
+    注：萃取金砖（战略判断）已移至 review_agent.py 每周复盘时执行。
     """
     if date is None:
         date = _yesterday_str()
@@ -718,37 +767,29 @@ def run_full_pipeline(date: str = None, vault_path: str = None) -> dict:
     print(f"开始 T-1 批处理 [{date}]...")
 
     try:
-        # 阶段 1
+        # 阶段 1: 编纂日记
         print("阶段 1: 编纂日记...")
         results['stage1'] = compile_diary(date, vault_path)
 
-        # 阶段 2
-        print("阶段 2: 萃取金砖...")
-        results['stage2'] = extract_insights(date, vault_path)
-
-        # 阶段 3
-        print("阶段 3: 读取变更报告...")
-        results['stage3'] = read_change_log(date, vault_path)
-
-        # 阶段 4
-        print("阶段 4: 编译跨域索引...")
+        # 阶段 2: 编译跨域索引
+        print("阶段 2: 编译跨域索引...")
         index_path = update_index_md(vault_path)
         compiled_updates = update_compiled(vault_path)
-        results['stage4'] = {'index': index_path, 'compiled': compiled_updates}
+        results['stage2'] = {'index': index_path, 'compiled': compiled_updates}
 
-        # 阶段 5
-        print("阶段 5: 记录人际互动...")
-        results['stage5'] = record_social_interactions(date, vault_path)
+        # 阶段 3: 记录人际互动
+        print("阶段 3: 记录人际互动...")
+        results['stage3'] = record_social_interactions(date, vault_path)
 
-        # 阶段 6
-        print("阶段 6: 记录体征数据...")
-        results['stage6'] = record_biometrics(date, vault_path)
+        # 阶段 4: 记录体征数据
+        print("阶段 4: 记录体征数据...")
+        results['stage4'] = record_biometrics(date, vault_path)
 
-        # 阶段 7
-        print("阶段 7: Lint 巡检...")
-        results['stage7'] = lint_check(vault_path)
+        # 阶段 5: Lint 巡检
+        print("阶段 5: Lint 巡检...")
+        results['stage5'] = lint_check(vault_path)
 
-        print(f"批处理完成！")
+        print("批处理完成！")
 
     except Exception as e:
         print(f"ERROR: 批处理失败 - {e}", file=sys.stderr)
