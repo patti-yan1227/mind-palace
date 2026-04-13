@@ -13,6 +13,7 @@
 
 import json
 import os
+import re
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -27,6 +28,7 @@ from portal_agent import archive_to_raw
 DEFAULT_VAULT = os.getenv('OBSIDIAN_VAULT', '')
 PROJECTS_DIR = '项目'
 PRIVATE_SOURCES_DIR = '_private_sources'
+LOG_DIR = '_log'
 SESSION_FILENAME = '_session.json'
 MAP_FILENAME = 'map.md'
 QUESTIONS_FILENAME = 'questions.md'
@@ -37,6 +39,7 @@ HIGHLIGHTS_SUBDIR = 'highlights'
 SESSION_TIMEOUT_HOURS = 2
 STALE_QUESTION_DAYS = 7
 STALE_HIGHLIGHTS_HOURS = 24
+STALE_SOURCES_HOURS = 24  # 新素材提醒阈值
 
 
 # ==================== 工具函数 ====================
@@ -71,7 +74,7 @@ def _fmt_time(iso: str) -> str:
 
 def check_and_notify(vault_path: str = None) -> str:
     """
-    检查三类情况并返回提醒文本（空字符串 = 无需提醒）：
+    检查四类情况并返回提醒文本（空字符串 = 无需提醒）：
     1. 有未关闭的 session（>2小时）
     2. 有未处理的 highlights（>24小时）
     3. 有 [ ] 问题超过7天未碰
@@ -133,7 +136,105 @@ def check_and_notify(vault_path: str = None) -> str:
             if stale_count > 0:
                 messages.append(f"· [{name}] 有 {stale_count} 个开放问题超过 {STALE_QUESTION_DAYS} 天未推进")
 
+    # 4. 新素材入库（_private_sources/）
+    new_sources = check_new_sources(vault_path)
+    for proj_name, files in new_sources.items():
+        file_list = ', '.join([f['name'] for f in files[:3]])
+        if len(files) > 3:
+            file_list += f" 等 {len(files)} 个文件"
+        messages.append(f"· [{proj_name}] 新素材入库：{file_list}，要现在学习吗？")
+
     return '\n'.join(messages) if messages else ''
+
+
+def check_new_sources(vault_path: str = None) -> dict:
+    """
+    检测 _private_sources/ 下的新素材（文件 mtime > 24 小时）
+    返回：{project_name: [file_info, ...]}
+    """
+    vault = _get_vault(vault_path)
+    sources_root = vault / PRIVATE_SOURCES_DIR
+
+    if not sources_root.exists():
+        return {}
+
+    new_sources = {}
+    now = datetime.now()
+
+    for proj_dir in sorted(sources_root.iterdir()):
+        if not proj_dir.is_dir():
+            continue
+
+        project_name = proj_dir.name
+        files = []
+
+        # 扫描项目下的所有 .md 文件（包括子目录如 highlights/）
+        for f in proj_dir.rglob('*.md'):
+            if f.is_file():
+                age_h = (now - datetime.fromtimestamp(f.stat().st_mtime)).total_seconds() / 3600
+                if age_h <= STALE_SOURCES_HOURS:
+                    # 24 小时内的新文件
+                    files.append({
+                        'path': str(f.relative_to(vault)),
+                        'name': f.stem,
+                        'size_kb': f.stat().st_size // 1024,
+                        'age_h': int(age_h)
+                    })
+
+        if files:
+            # 按时间排序，最新的在前
+            files.sort(key=lambda x: x['age_h'])
+            new_sources[project_name] = files
+
+    return new_sources
+
+
+def write_sources_log(project_name: str, files: list, vault_path: str = None):
+    """
+    将新素材入库记录写入 _log/
+    """
+    vault = _get_vault(vault_path)
+    log_file = vault / LOG_DIR / f"{datetime.now().strftime('%Y-%m')}.md"
+
+    # 准备素材表格
+    table_rows = []
+    for f in files[:10]:  # 最多显示 10 个
+        table_rows.append(f"| {f['name']}.md | {f['size_kb']} KB |")
+
+    if len(files) > 10:
+        table_rows.append(f"| ... 还有 {len(files) - 10} 个文件 |")
+
+    record = f"""### [{datetime.now().strftime('%Y-%m-%d')}] ingest | {project_name} 素材导入
+
+**来源：** `_private_sources/{project_name}/`
+
+**素材清单：**
+| 文件名 | 大小 |
+|------|------|
+{chr(10).join(table_rows)}
+
+**合计：** {len(files)} 个文件，约 {sum(f['size_kb'] for f in files)} KB
+
+**后续处理：**
+- 可通过 `/学习` 触发学习 Agent 处理这些素材
+- 复盘 Agent 可从中萃取跨领域洞察
+
+---
+
+"""
+
+    # 追加到 _log/文件（如果文件不存在会创建）
+    if log_file.exists():
+        content = log_file.read_text(encoding='utf-8')
+        # 找到"## 操作记录"后面插入
+        if "## 操作记录" in content:
+            content = content.replace("## 操作记录\n", f"## 操作记录\n{record}")
+        else:
+            content += f"\n{record}"
+    else:
+        content = f"# {datetime.now().strftime('%Y-%m')} 操作日志\n\n> 说明：本文件记录所有 ingest（素材摄入）、query（检索问答）、lint（健康检查）操作\n\n---\n\n{record}"
+
+    log_file.write_text(content, encoding='utf-8')
 
 
 def check_and_close_stale_session(vault_path: str = None, timeout_hours: int = SESSION_TIMEOUT_HOURS) -> bool:
@@ -901,6 +1002,7 @@ def main():
                         choices=[
                             'check_and_notify',
                             'check_and_close_stale_session',
+                            'check_sources',
                             'list',
                             'recommend',
                             'load',
@@ -937,6 +1039,21 @@ def main():
     elif args.action == 'check_and_close_stale_session':
         closed = check_and_close_stale_session(vault)
         print("已关闭超时 session" if closed else "无超时 session")
+
+    elif args.action == 'check_sources':
+        new_sources = check_new_sources(vault)
+        if not new_sources:
+            print("✓ 无新素材")
+        else:
+            for proj_name, files in new_sources.items():
+                print(f"[{proj_name}] 新素材入库：")
+                for f in files[:5]:
+                    print(f"  · {f['name']}.md ({f['size_kb']} KB, {f['age_h']}小时前)")
+                if len(files) > 5:
+                    print(f"  ... 还有 {len(files) - 5} 个文件")
+                # 自动写入 _log/
+                write_sources_log(proj_name, files, vault)
+                print(f"  → 已记录到 _log/")
 
     elif args.action == 'list':
         projects = list_projects(vault)
