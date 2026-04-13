@@ -871,6 +871,7 @@ def record_session(project_name: str, duration_min: int, mode: str,
         'C': '模式C·处理Highlights',
         'D': '模式D·复习测试',
         'E': '模式E·问题探索',
+        'F': '模式 F·四步学习法',
     }
     mode_label = mode_names.get(mode, f'模式{mode}')
     if note_suffix:
@@ -916,7 +917,7 @@ def main():
                         ],
                         help='执行动作')
     parser.add_argument('--project', '-p', type=str, help='项目名称')
-    parser.add_argument('--mode', '-m', type=str, default='A', help='学习模式 (A/B/C/D/E)')
+    parser.add_argument('--mode', '-m', type=str, default='A', help='学习模式 (A/B/C/D/E/F)')
     parser.add_argument('--input', '-i', type=str, help='输入内容（highlights / 笔记 / 问题）')
     parser.add_argument('--concept', '-c', type=str, help='概念名称（save_note 用）')
     parser.add_argument('--confidence', type=str, default='中', help='置信度（高/中/低）')
