@@ -38,15 +38,13 @@ def archive_to_raw(message: str, vault_path: str = None, timestamp: str = None):
     raw_dir = vault / RAW_INBOX_DIR
     raw_dir.mkdir(parents=True, exist_ok=True)
 
-    # 生成分块文件名（按小时分块，防止 Token 爆炸）
+    # 每天一个文件：_raw_inbox/2026-04-09.md
     now = datetime.now()
     if timestamp is None:
         timestamp = now.strftime('%H:%M')
     date = now.strftime('%Y-%m-%d')
-    hour = now.strftime('%H')
 
-    # 分块策略：_raw_inbox/2026-04-09-14.md
-    filename = f"{date}-{hour}.md"
+    filename = f"{date}.md"
     filepath = raw_dir / filename
 
     # 追加写入
