@@ -489,6 +489,93 @@ def generate_index_content(sections: dict) -> str:
     return content
 
 
+def update_diary_index(vault_path: str = None) -> str:
+    """
+    扫描 日记/ 目录，重新生成 日记/索引.md。
+    每次 compile_diary 后自动调用。
+    """
+    vault = _get_vault(vault_path)
+    diary_dir = vault / DIARY_DIR
+    index_file = diary_dir / '索引.md'
+
+    # 收集所有日记文件，按年/月分层
+    from collections import defaultdict
+    year_month_files = defaultdict(lambda: defaultdict(list))
+    all_files = []
+
+    for md in sorted(diary_dir.rglob('*.md')):
+        if md.name == '索引.md':
+            continue
+        parts = md.relative_to(diary_dir).parts
+        if len(parts) == 3:  # YYYY/MM/filename.md
+            year, month = parts[0], parts[1]
+            year_month_files[year][month].append(md.stem)
+            all_files.append((year, month, md.stem))
+        elif len(parts) == 1:  # 旧格式 filename.md（直接在根目录）
+            year_month_files['旧']['--'].append(md.stem)
+            all_files.append(('旧', '--', md.stem))
+
+    all_files.sort(reverse=True)
+
+    # 生成目录结构文本
+    tree_lines = ['日记/', '├── 索引.md (本文件)']
+    for year in sorted(year_month_files.keys(), reverse=True):
+        if year == '旧':
+            continue
+        tree_lines.append(f'├── {year}/')
+        months = sorted(year_month_files[year].keys(), reverse=True)
+        for i, month in enumerate(months):
+            count = len(year_month_files[year][month])
+            prefix = '│   └──' if i == len(months) - 1 else '│   ├──'
+            tree_lines.append(f'{prefix} {month}/  ({month.lstrip("0")} 月，{count} 篇)')
+
+    # 生成快速链接
+    links_section = '## 快速链接\n\n'
+    for year in sorted(year_month_files.keys(), reverse=True):
+        if year == '旧':
+            continue
+        links_section += f'### {year} 年\n\n'
+        for month in sorted(year_month_files[year].keys(), reverse=True):
+            files = sorted(year_month_files[year][month], reverse=True)
+            count = len(files)
+            links_section += f'**{month.lstrip("0")}月** ({count}篇)\n\n'
+            links_section += ' | '.join(f'[[日记/{year}/{month}/{f}]]' for f in files)
+            links_section += '\n\n'
+
+    # 生成最近 10 篇
+    recent = all_files[:10]
+    recent_section = '## 最近 10 篇日记\n\n| 日期 | 链接 |\n|------|------|\n'
+    for year, month, stem in recent:
+        if year == '旧':
+            recent_section += f'| {stem} | [[日记/{stem}]] |\n'
+        else:
+            recent_section += f'| {stem} | [[日记/{year}/{month}/{stem}]] |\n'
+
+    now_str = datetime.now().strftime('%Y/%m/%d %a')
+    content = (
+        '# 日记索引\n\n'
+        '> 本索引按年/月组织，方便查找历史日记\n\n'
+        '---\n\n'
+        '## 目录结构\n\n'
+        '```\n' + '\n'.join(tree_lines) + '\n```\n\n'
+        '---\n\n'
+        + links_section +
+        '---\n\n'
+        + recent_section +
+        '\n---\n\n'
+        '## 使用说明\n\n'
+        '- 新增日记自动写入 `YYYY/MM/` 子目录（如 `2026/04/2026-04-14.md`）\n'
+        '- 炼金术 Agent 在每次 compile_diary 后自动更新本索引\n'
+        '- Obsidian 可以正常识别子目录中的双向链接\n\n'
+        '---\n\n'
+        f'*最后更新：{now_str}*\n'
+        '*本索引由炼金术 Agent 在 T-1 批处理时自动维护*\n'
+    )
+
+    index_file.write_text(content, encoding='utf-8')
+    return str(index_file.relative_to(vault))
+
+
 def update_compiled(vault_path: str = None) -> list:
     """
     更新 _compiled/ 跨域索引
@@ -763,6 +850,7 @@ def run_full_pipeline(date: str = None, vault_path: str = None) -> dict:
         # 阶段 1: 编纂日记
         print("阶段 1: 编纂日记...")
         results['stage1'] = compile_diary(date, vault_path)
+        update_diary_index(vault_path)
 
         # 阶段 2: 编译跨域索引
         print("阶段 2: 编译跨域索引...")
