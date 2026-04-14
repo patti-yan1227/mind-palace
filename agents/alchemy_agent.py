@@ -212,7 +212,7 @@ def compile_diary(date: str, vault_path: str = None, use_llm: bool = True) -> st
         log_content = log_file.read_text(encoding='utf-8')
         # 提取该日期的记录
         import re
-        log_matches = re.findall(rf'## \[{date}\] (ingest|query)\|([^\n]+)(.*?)(?=## \[|$)', log_content, re.DOTALL)
+        log_matches = re.findall(rf'### \[{date}\] (ingest|query) \| ([^\n]+)(.*?)(?=### \[|$)', log_content, re.DOTALL)
         for op_type, desc, details in log_matches:
             log_entries.append(f"[{op_type}] {desc}: {details.strip()}")
 
@@ -279,7 +279,7 @@ def read_change_log(date: str, vault_path: str = None) -> dict:
 
     # 简单解析：查找 [date] ingest 条目
     import re
-    pattern = rf'## \[{date}\] ingest \| ([^\n]+) 学习 session(.*?)(?=## \[|$)'
+    pattern = rf'### \[{date}\] ingest \| ([^\n]+) 学习 session(.*?)(?=### \[|$)'
     matches = re.findall(pattern, content, re.DOTALL)
 
     for project_name, section in matches:
