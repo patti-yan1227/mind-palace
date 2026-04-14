@@ -199,7 +199,7 @@ ALCHEMY_USE_LLM=true
 |-------|------|------|
 | Phase 1 | 门房 Portal + raw_inbox 归档 | ✅ 完成 |
 | Phase 2 | 炼金术 Agent 五阶段流水线 | ✅ 完成（记录功能已实现） |
-| Phase 3 | 复盘 Agent 设计 | ✅ 设计完成，代码部分实现 |
+| Phase 3 | 复盘 Agent | ✅ 核心功能实现（8 雷达扫描 +5 板块流程+Persona 写入） |
 | Phase 4 | 自动化演进路线 | 📋 设计中 |
 | Phase 5 | 学习读书 Agent（交互式学伴） | ✅ 六种模式完成 |
 | Phase 6 | 情报收集 Agent | 📋 设计预留 |
@@ -233,10 +233,9 @@ ALCHEMY_USE_LLM=true
    - [ ] 开启完整学习 session（模式 A-F）
    - [ ] 验证 `_log/` 变更报告、`map.md` 自动索引
 
-3. **复盘 Agent 实现**：
-   - [ ] 8 雷达扫描逻辑
-   - [ ] 5 板块对话流程（GRAI、能量、Persona 更新）
-   - [ ] `_persona/` 写入机制（人类确认后追加）
+3. **复盘 Agent 测试与完善**：
+   - [ ] 完整测试 5 板块流程（GRAI、能量、Persona 更新、Stop/Start/Continue）
+   - [ ] 验证 `_persona/` 写入机制（人类确认后追加 + backlink）
 
 4. **Lint 规则细化**（预留）：
    - [ ] 命名冲突检测（同概念跨项目定义冲突）
