@@ -196,7 +196,7 @@ def compile_diary(date: str, vault_path: str = None, use_llm: bool = True) -> st
     target_dir.mkdir(parents=True, exist_ok=True)
 
     # 读取该日期所有 raw 文件
-    raw_files = sorted(raw_dir.glob(f"{date}*.md"))
+    raw_files = sorted(raw_dir.glob(f"{date}.md"))
     if not raw_files:
         return f"日记 {date}: 无原始输入"
 
