@@ -8,9 +8,8 @@
 
 当用户输入包含以下任意触发词时：
 - `@日记`
-- `记下来`
-- `记录下来`
-- 或消息匹配 `.*日记.*` 模式
+- `记下来` / `记录下来` / `记一下` / `记录一下` / `记一嘴`
+- 或消息包含 `日记`
 
 **执行步骤：**
 
@@ -19,9 +18,6 @@
    ```
    python agents/portal_agent.py --input "<内容>" --vault "YOUR_VAULT_PATH"
    ```
-   > `YOUR_VAULT_PATH` 替换为你本地 Vault 的绝对路径，例如：
-   > - Windows: `C:\Users\yourname\mind-palace-vault`
-   > - Mac/Linux: `/Users/yourname/mind-palace-vault`
 3. 向用户确认归档成功，并告知写入的文件路径（如 `_raw_inbox/2026-04-12-14.md`）
 
 **核心约束（不可妥协）：**
@@ -68,19 +64,56 @@ python agents/learning_agent.py --action check_and_notify --vault "YOUR_VAULT_PA
 - **D — 复习旧笔记**：随机抽概念名自测→对比笔记→提议更新
 - **E — 问题驱动探索**：用户带着问题→先搜已有内容→报告缺口→决定归入项目
 
-**自然感知保存（不依赖魔法词汇）：**
+**记录与保存（不依赖魔法词汇）：**
 
-| 信号 | Claude 的行动 |
+#### 用户主动触发
+| 用户说 | Claude 处理 |
+|--------|-------------|
+| "记下来" | 根据内容提炼名字，保存到 `notes/` |
+| "存为笔记" | 同上 |
+| "这个要全记录" | 完整保存（到 `dialogue/` 或单独文件） |
+| "记下来，叫 XXX" | 用用户给的名字 |
+
+#### Claude 主动感知
+| 信号 | Claude 的提议 |
 |------|--------------|
-| 用户表达了清晰理解 | 提议起名保存为笔记 |
-| 用户提出未解问题 | 提议记入问题池 |
-| 用户确认（是/好/存） | 调用 save_note 或 append_question |
+| 用户表达了清晰理解/洞察 | "这个值得记下来——给这个洞察起个名字？" |
+| 用户提出未解问题 | "这个问题记到你的问题池？" |
+| 讨论到一个结论 | "要不要存成今天的笔记？" |
+| 用户说"对对对就是这个意思" | "我来帮你把这个理解存下来，确认一下：<提炼版本>" |
+
+用户只需回复 **是/好/存/不用**。
+
+#### 归类规则
+| 内容类型 | 存放位置 | 使用命令 |
+|----------|----------|----------|
+| 概念/框架/方法论 | `项目/<项目名>/notes/` | `--action save_note --concept "<名>" --input "<内容>"` |
+| 对话全过程 | `项目/<项目名>/dialogue/` | `--action save_dialogue --input "<内容>"` |
+| 问题/困惑 | `项目/<项目名>/questions.md` | `--action append_question --input "<问题>"` |
+| 外部素材（视频/文章） | `_private_sources/<项目名>/` | 仅用户手动 |
+
+**严禁直接用 Write/Edit 工具写入项目文件**——必须通过 learning_agent.py 的对应 action，以确保 session 状态被正确追踪。
 
 **关闭 session：**
-用户说"结束"/"今天到这"时调用：
+用户说"结束"/"今天到这"/"归档关闭"等时，按以下顺序执行：
+
+**步骤一：主动询问是否保存对话**
+问用户："要把今天的对话存成 dialogue 吗？"
+确认后调用：
+```
+python agents/learning_agent.py --action save_dialogue --project "<项目名>" --input "<对话压缩摘要>" --vault "YOUR_VAULT_PATH"
+```
+
+**步骤二：回顾本次对话，检查遗漏**
+列出"我认为还未记录的洞察/问题"，逐一让用户确认：
+- 洞察/概念 → `save_note --concept "<名>" --input "<内容>"`
+- 未解问题 → `append_question --input "<问题>"`
+
+**步骤三：调用 close_session**
 ```
 python agents/learning_agent.py --action close_session --project "<项目名>" --vault "YOUR_VAULT_PATH"
 ```
+close_session 会自动：扫描变更写入 `_log/`、更新 `map.md` 索引、写入 `_raw_inbox/` 摘要。
 
 ---
 
@@ -90,8 +123,49 @@ python agents/learning_agent.py --action close_session --project "<项目名>" -
 |------|----------|----------|
 | `_raw_inbox/` | Portal Agent（本 session） | 实时 |
 | `_private_sources/` | 仅用户手动 | 手动 |
-| `日记/` | 炼金术 Agent | 凌晨 T-1 批处理（待实现） |
+| `日记/` | 炼金术 Agent | 凌晨 T-1 批处理 |
 | `项目/` | 用户 + 学习 Agent | 主动发起 |
-| `_compiled/` | 炼金术 Agent | 凌晨 T-1 批处理（待实现） |
+| `_compiled/` | 炼金术 Agent | 凌晨 T-1 批处理 |
+| `_index.md` | 炼金术 Agent | 凌晨 T-1 批处理 |
+| `_log/` | 学习 Agent + 炼金术 Agent | session 关闭时 + T-1 批处理 |
 | `_social_graph/review/` | 战略复盘 Agent | 周末闭门会 |
 | `_persona/` | 战略复盘 Agent | 周末闭门会 |
+
+---
+
+## 炼金术技能（Alchemy Agent）
+
+当用户输入包含以下任意触发词时：
+- `/炼金`
+- `/批处理`
+- `运行炼金术`
+
+**执行步骤：**
+
+1. 调用批处理命令（默认处理昨天的数据）：
+   ```
+   python agents/alchemy_agent.py --action run --vault "YOUR_VAULT_PATH"
+   ```
+2. 向用户展示各阶段执行结果
+
+**六阶段流水线：**
+1. **编纂日记**：读取 T-1 `_raw_inbox/` → `日记/{date}.md`
+2. **萃取金砖**：从日记/项目变动提取核心洞察
+3. **读取变更报告**：从 `_log/` 读取昨日学习 session 的变更
+4. **编译跨域索引**：更新 `_index.md` 和 `_compiled/`
+5. **记录人际互动**：→ `_social_graph/log/`
+6. **记录体征数据**：→ `_biometrics/log/`
+7. **Lint 巡检**：→ `_lint_report/{date}.md`
+
+**手动触发子任务：**
+- `--action compile_diary` - 仅编纂日记
+- `--action update_index` - 仅更新全局索引
+- `--action lint` - 仅 Lint 检查
+
+---
+
+## Vault 路径
+
+```
+YOUR_VAULT_PATH
+```
