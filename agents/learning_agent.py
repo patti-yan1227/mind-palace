@@ -1076,6 +1076,10 @@ def main():
         if not args.project:
             parser.error('--load 需要 --project')
         ctx = load_context(args.project, vault)
+        # 自动开启 session（如果尚未开启）
+        session_file = _project_dir(args.project, vault) / SESSION_FILENAME
+        if not session_file.exists():
+            open_session(args.project, args.mode, vault)
         if args.output_json:
             print(json.dumps(ctx, ensure_ascii=False, indent=2))
         else:
