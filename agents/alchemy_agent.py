@@ -40,11 +40,113 @@ LINT_REPORT_DIR = '_lint_report'
 PROJECTS_DIR = '项目'
 PRIVATE_SOURCES_DIR = '_private_sources'
 
+# WIKI_SCHEMA 路径（项目根目录）
+WIKI_SCHEMA_PATH = Path(__file__).parent.parent / 'WIKI_SCHEMA.md'
+
 # LLM 配置（可选，用户自行配置）
 LLM_API_KEY = os.getenv('LLM_API_KEY', '')
 LLM_MODEL = os.getenv('LLM_MODEL', 'claude-sonnet-4-5-20251001')
 LLM_API_BASE_URL = os.getenv('LLM_API_BASE_URL', 'https://api.anthropic.com')
 USE_LLM = os.getenv('ALCHEMY_USE_LLM', 'false').lower() == 'true'  # 默认关闭，用户手动开启
+
+# ==================== WIKI_SCHEMA 加载 ====================
+
+WIKI_SCHEMA = {
+    'concept_template': '',
+    'person_template': '',
+    'relation_template': '',
+    'loaded': False
+}
+
+
+def load_wiki_schema() -> dict:
+    """
+    加载 WIKI_SCHEMA.md，验证文件存在
+    返回：schema 字典
+    """
+    if WIKI_SCHEMA['loaded']:
+        return WIKI_SCHEMA
+
+    if not WIKI_SCHEMA_PATH.exists():
+        print(f"警告：WIKI_SCHEMA.md 未找到，使用默认模板")
+        _set_default_templates()
+        WIKI_SCHEMA['loaded'] = True
+        return WIKI_SCHEMA
+
+    try:
+        # 只验证文件存在且可读，模板使用默认定义
+        content = WIKI_SCHEMA_PATH.read_text(encoding='utf-8')
+        if '# _compiled/ 规格说明书' in content:
+            print(f"WIKI_SCHEMA 验证成功：{WIKI_SCHEMA_PATH}")
+            _set_default_templates()  # 使用代码中定义的模板
+        else:
+            print("警告：WIKI_SCHEMA.md 格式不正确，使用默认模板")
+            _set_default_templates()
+
+    except Exception as e:
+        print(f"警告：WIKI_SCHEMA 读取失败 - {e}，使用默认模板")
+        _set_default_templates()
+
+    WIKI_SCHEMA['loaded'] = True
+    return WIKI_SCHEMA
+
+
+def _set_default_templates():
+    """设置默认模板（兜底）"""
+    # 概念页模板
+    WIKI_SCHEMA['concept_template'] = """# {{title}}
+
+---
+type: concept
+title: {{title}}
+aliases: []
+sources: []
+related: []
+created: {{created}}
+updated: {{updated}}
+confidence: {{confidence}}
+---
+
+## 核心定义
+
+（待萃取）
+
+## 跨项目引用
+
+{{sources}}
+
+## 关联概念
+
+{{related}}
+
+## 开放问题
+
+（待补充）
+"""
+    WIKI_SCHEMA['loaded'] = True
+
+
+def _fill_concept_template(concept_name: str, sources: list, related: list, created: str, updated: str, confidence: str = 'speculative') -> str:
+    """
+    填充概念页模板
+    """
+    schema = load_wiki_schema()
+    template = schema['concept_template']
+
+    # 生成引用列表
+    sources_md = '\n'.join(f'- {ref}' for ref in sources)
+    related_md = '\n'.join(f'- {ref}' for ref in related) if related else '（暂无）'
+
+    # 替换占位符
+    content = template.replace('{{title}}', concept_name)
+    content = content.replace('{{概念名}}', concept_name)
+    content = content.replace('{{created}}', created)
+    content = content.replace('{{updated}}', updated)
+    content = content.replace('{{confidence}}', confidence)
+    content = content.replace('{{sources}}', sources_md)
+    content = content.replace('{{related}}', related_md)
+
+    return content
 
 
 def llm_generate(prompt: str) -> str:
@@ -102,6 +204,35 @@ def _yesterday_str() -> str:
 
 def _today_str() -> str:
     return datetime.now().strftime('%Y-%m-%d')
+
+
+def detect_new_sources(vault_path: str = None, hours: int = 48) -> list:
+    """
+    扫描 _private_sources/ 中近 N 小时内新增的文件。
+    返回：[{'project': str, 'title': str, 'path': str, 'age_h': int}, ...]
+    """
+    vault = _get_vault(vault_path)
+    sources_root = vault / PRIVATE_SOURCES_DIR
+    if not sources_root.exists():
+        return []
+
+    now = datetime.now()
+    new_files = []
+    for proj in sorted(sources_root.iterdir()):
+        if not proj.is_dir():
+            continue
+        for f in proj.rglob('*.md'):
+            age_h = (now - datetime.fromtimestamp(f.stat().st_mtime)).total_seconds() / 3600
+            if age_h <= hours:
+                rel = f.relative_to(sources_root)
+                new_files.append({
+                    'project': proj.name,
+                    'title': f.stem,
+                    'path': f'_private_sources/{rel}',
+                    'age_h': int(age_h),
+                })
+    new_files.sort(key=lambda x: x['age_h'])
+    return new_files
 
 
 # ==================== 阶段 1: 编纂日记 ====================
@@ -585,6 +716,9 @@ def update_compiled(vault_path: str = None) -> list:
     compiled_dir = vault / COMPILED_DIR
     projects_dir = vault / PROJECTS_DIR
 
+    # 加载 WIKI_SCHEMA
+    load_wiki_schema()
+
     updated = []
 
     # 扫描所有 notes/ 提取概念
@@ -599,11 +733,13 @@ def update_compiled(vault_path: str = None) -> list:
                     concept = note.stem
                     if concept not in concepts:
                         concepts[concept] = []
-                    concepts[concept].append(f'[[项目/{proj.name}/notes/{note.name}]]')
+                    concepts[concept].append(f'[[../../项目/{proj.name}/notes/{note.name}]]')
 
     # 为每个概念创建/更新页面
     concept_dir = compiled_dir / '概念'
     concept_dir.mkdir(parents=True, exist_ok=True)
+
+    today = _today_str()
 
     for concept, refs in concepts.items():
         concept_file = concept_dir / f"{concept}.md"
@@ -611,18 +747,30 @@ def update_compiled(vault_path: str = None) -> list:
             existing = concept_file.read_text(encoding='utf-8')
             # 检查是否有新引用
             if len(refs) > existing.count('[['):
-                # 更新
-                pass
+                # 更新现有页面：保留原有内容，追加新引用
+                # 找到"跨项目引用"section，追加新引用
+                import re
+                match = re.search(r'## 跨项目引用\n\n(.*?)(?=## |$)', existing, re.DOTALL)
+                if match:
+                    existing_refs = match.group(1).strip()
+                    # 找出还没有添加的引用
+                    new_refs = [ref for ref in refs if ref not in existing_refs]
+                    if new_refs:
+                        new_refs_md = '\n'.join(new_refs)
+                        updated_content = existing.replace(match.group(0), f"## 跨项目引用\n\n{existing_refs}\n{new_refs_md}\n")
+                        updated_content = updated_content.replace(f'updated: ', f'updated: {today}\n# updated: ')
+                        concept_file.write_text(updated_content, encoding='utf-8')
+                        updated.append(str(concept_file.relative_to(vault)))
         else:
-            # 创建新页面
-            content = f"# {concept}\n\n"
-            content += f"> 创建：{_today_str()}\n"
-            content += "> 维护者：炼金术 Agent（T-1 批处理自动更新）\n\n"
-            content += "---\n\n"
-            content += "## 核心定义\n\n（待萃取）\n\n"
-            content += "## 跨项目引用\n\n"
-            for ref in refs:
-                content += f"- {ref}\n"
+            # 创建新页面（使用 WIKI_SCHEMA 模板）
+            content = _fill_concept_template(
+                concept_name=concept,
+                sources=refs,
+                related=[],
+                created=today,
+                updated=today,
+                confidence='speculative'  # 新概念默认 speculative
+            )
             concept_file.write_text(content, encoding='utf-8')
             updated.append(str(concept_file.relative_to(vault)))
 
@@ -856,7 +1004,8 @@ def run_full_pipeline(date: str = None, vault_path: str = None) -> dict:
         print("阶段 2: 编译跨域索引...")
         index_path = update_index_md(vault_path)
         compiled_updates = update_compiled(vault_path)
-        results['stage2'] = {'index': index_path, 'compiled': compiled_updates}
+        new_sources = detect_new_sources(vault_path)
+        results['stage2'] = {'index': index_path, 'compiled': compiled_updates, 'new_sources': new_sources}
 
         # 阶段 3: 记录人际互动
         print("阶段 3: 记录人际互动...")
@@ -901,7 +1050,17 @@ def main():
             print(json.dumps(results, ensure_ascii=False, indent=2, default=str))
         else:
             for stage, result in results.items():
-                print(f"{stage}: {result}")
+                if stage == 'stage2' and isinstance(result, dict):
+                    print(f"stage2: index={result.get('index')}, compiled={result.get('compiled')}")
+                    new_sources = result.get('new_sources', [])
+                    if new_sources:
+                        print(f"  [新入库素材 48h内]")
+                        for s in new_sources:
+                            print(f"    [{s['project']}] {s['title']} ({s['age_h']}h ago)")
+                    else:
+                        print("  新入库素材：无")
+                else:
+                    print(f"{stage}: {result}")
 
     elif args.action == 'compile_diary':
         result = compile_diary(args.date or _yesterday_str(), vault)
