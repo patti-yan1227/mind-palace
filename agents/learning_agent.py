@@ -129,8 +129,7 @@ def check_and_notify(vault_path: str = None) -> str:
                             q_date = datetime.fromisoformat(m.group(1))
                             if (now - q_date).days > STALE_QUESTION_DAYS:
                                 stale_count += 1
-                        else:
-                            stale_count += 1  # 没有日期标注的也算
+                        # 没有日期标注的问题无法判断时间，跳过不算
             except Exception:
                 pass
             if stale_count > 0:
