@@ -26,7 +26,7 @@ from portal_agent import archive_to_raw
 # ==================== 配置 ====================
 
 DEFAULT_VAULT = os.getenv('OBSIDIAN_VAULT', '')
-PROJECTS_DIR = '项目'
+PROJECTS_DIR = '学习'
 PRIVATE_SOURCES_DIR = '_private_sources'
 LOG_DIR = '_log'
 SESSION_FILENAME = '_session.json'

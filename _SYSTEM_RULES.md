@@ -80,7 +80,9 @@
 | `_raw_inbox/` | 门房 Portal | 实时 |
 | `_private_sources/` | 用户手动 | 手动 |
 | `日记/` | 炼金术 Agent | 凌晨 00:00 T-1 |
-| `项目/` | 学习读书 Agent + 用户 | 用户主动发起 |
+| `系统文档/` | 人 + Agent | 手动/架构变更时 |
+| `学习/` | 学习读书 Agent + 用户 | 用户主动发起 |
+| `项目/` | 多 Agent + 用户 | 战役项目推进 |
 | `_compiled/` | 炼金术 Agent | 凌晨 00:00 T-1 |
 | `_social_graph/log/` | 炼金术 Agent | 凌晨 00:00 T-1 |
 | `_social_graph/review/` | 战略复盘 Agent | 周末闭门会 |

@@ -37,7 +37,7 @@ LOG_DIR = '_log'
 SOCIAL_GRAPH_LOG_DIR = '_social_graph/log'
 BIOMETRICS_LOG_DIR = '_biometrics/log'
 LINT_REPORT_DIR = '_lint_report'
-PROJECTS_DIR = '项目'
+PROJECTS_DIRS = ['学习', '项目']  # 同时扫描学习项目和战役项目
 PRIVATE_SOURCES_DIR = '_private_sources'
 
 # WIKI_SCHEMA 路径（项目根目录）
@@ -439,7 +439,6 @@ def update_index_md(vault_path: str = None) -> str:
     """
     vault = _get_vault(vault_path)
     index_file = vault / INDEX_FILE
-    projects_dir = vault / PROJECTS_DIR
     compiled_dir = vault / COMPILED_DIR
     diary_dir = vault / DIARY_DIR
     social_log_dir = vault / SOCIAL_GRAPH_LOG_DIR
@@ -455,8 +454,11 @@ def update_index_md(vault_path: str = None) -> str:
         'logs': []
     }
 
-    # 项目（只收集 map.md 作为入口）
-    if projects_dir.exists():
+    # 项目（扫描学习/和 projects/两个目录）
+    for proj_dir_name in PROJECTS_DIRS:
+        projects_dir = vault / proj_dir_name
+        if not projects_dir.exists():
+            continue
         for proj in projects_dir.iterdir():
             if not proj.is_dir():
                 continue
@@ -466,7 +468,7 @@ def update_index_md(vault_path: str = None) -> str:
                 map_content = map_file.read_text(encoding='utf-8')
                 first_line = map_content.split('\n')[0].lstrip('#').strip()
                 index_sections['projects'].append({
-                    'path': f'项目/{proj.name}/map.md',
+                    'path': f'{proj_dir_name}/{proj.name}/map.md',
                     'title': proj.name,
                     'desc': first_line
                 })

@@ -67,6 +67,8 @@ convert_*.py
 _raw_inbox/
 _private_sources/
 日记/
+系统文档/
+学习/
 项目/
 _compiled/
 _social_graph/

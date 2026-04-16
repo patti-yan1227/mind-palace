@@ -33,7 +33,7 @@ load_dotenv()
 DEFAULT_VAULT = os.getenv('OBSIDIAN_VAULT', '')
 
 DIARY_DIR = '日记'
-PROJECTS_DIR = '项目'
+PROJECTS_DIRS = ['学习', '项目']  # 同时扫描学习项目和战役项目
 PRIVATE_SOURCES_DIR = '_private_sources'
 SOCIAL_GRAPH_LOG_DIR = '_social_graph/log'
 BIOMETRICS_LOG_DIR = '_biometrics/log'
@@ -189,9 +189,11 @@ def scan_week(vault: Path, start_date: str, end_date: str) -> dict:
                     'content': f.read_text(encoding='utf-8')
                 })
 
-    # 学习笔记 & 问题（按修改时间过滤）
-    projects_dir = vault / PROJECTS_DIR
-    if projects_dir.exists():
+    # 学习笔记 & 问题（按修改时间过滤，扫描学习/和项目/两个目录）
+    for proj_dir_name in PROJECTS_DIRS:
+        projects_dir = vault / proj_dir_name
+        if not projects_dir.exists():
+            continue
         for proj in projects_dir.iterdir():
             if not proj.is_dir():
                 continue
