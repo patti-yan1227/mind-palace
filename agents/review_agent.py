@@ -488,6 +488,13 @@ def main():
         if not args.input_content:
             print("错误：update_persona 需要 --input 参数", file=sys.stderr)
             sys.exit(1)
+        # 格式检查：input 应包含 ### 标题结构
+        if '### ' not in args.input_content:
+            print("[格式警告] --input 缺少 ### 标题结构，请按规范格式传入：", file=sys.stderr)
+            print("  ### [洞察名称]", file=sys.stderr)
+            print("  > 来源：[日期·板块]", file=sys.stderr)
+            print("  **一句话：** [核心结论]", file=sys.stderr)
+            print("  - 要点", file=sys.stderr)
         path = write_persona_dimension(vault, args.dimension, args.input_content, args.source_ref)
         result = {'dimension': args.dimension, 'path': path, 'status': 'ok'}
         if args.output_json:
