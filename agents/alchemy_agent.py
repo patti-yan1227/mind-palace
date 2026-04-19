@@ -716,7 +716,7 @@ def update_compiled(vault_path: str = None) -> list:
     """
     vault = _get_vault(vault_path)
     compiled_dir = vault / COMPILED_DIR
-    projects_dir = vault / PROJECTS_DIR
+    projects_dir = vault / '项目'
 
     # 加载 WIKI_SCHEMA
     load_wiki_schema()
@@ -937,7 +937,7 @@ def lint_check(vault_path: str = None) -> str:
     }
 
     # 检查孤立页面（没有 wikilink 指向的 notes/）
-    projects_dir = vault / PROJECTS_DIR
+    projects_dir = vault / '项目'
     if projects_dir.exists():
         for proj in projects_dir.iterdir():
             if not proj.is_dir():

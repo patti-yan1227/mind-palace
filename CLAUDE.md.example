@@ -133,6 +133,94 @@ close_session 会自动：扫描变更写入 `_log/`、更新 `map.md` 索引、
 
 ---
 
+## 复盘技能（Review Agent）
+
+当用户输入包含以下任意触发词时：
+- `/复盘`
+- `开始复盘`
+- `周复盘`
+
+**首次运行 vs 常规运行：**
+
+- **首次运行**：`_persona/` 尚未初始化时，扫描全量历史数据，生成 Persona 基准版本（v1.0）
+- **常规运行**：每周日，只扫描本周新增/变更内容，与现有 Persona 对比
+
+**执行步骤：**
+
+**板块 1 — AI 摊牌（扫描）**
+
+```
+# 首次运行
+python agents/review_agent.py --action scan --first-run --start-date <起始日期> --vault "YOUR_VAULT_PATH"
+
+# 常规扫描
+python agents/review_agent.py --action scan --vault "YOUR_VAULT_PATH"
+```
+
+向用户展示 8 雷达发现，格式：
+- `[本质理解/跨域模式/决策背景/价值观碰撞]` 高价值内容 → 引入板块 4 讨论素材
+- `[A_core/B_filter/C_domain/D_trajectory]` Persona 候选更新 → 板块 4 逐维度确认
+- 值得深聊的张力 → 引出 Socratic questioning
+
+**板块 2 — 本周得失（GRAI 框架）**
+
+直接在 Claude Code 对话中进行，无需调用 agent：
+- G（Goal）：这周设定了什么目标？
+- R（Result）：实际发生了什么？差距在哪？
+- A（Analysis）：成败的关键因素是什么？
+- I（Insight）：这背后有什么规律？
+
+**板块 3 — 能量与状态**
+
+直接在 Claude Code 对话中进行，无需调用 agent：
+- 充电时刻：什么事情做完后精力更足？
+- 耗电时刻：什么事情做完后很空洞？
+
+**板块 4 — Persona 更新（核心）**
+
+逐维度讨论，用户说"记下来"/"更新"/"确认"时调用：
+
+```
+python agents/review_agent.py --action update_persona \
+  --dimension <A_core|B_filter|C_domain|D_trajectory> \
+  --input "<内容>" \
+  --source-ref "复盘 <日期>" \
+  --vault "YOUR_VAULT_PATH"
+```
+
+4 个维度写入规则：
+
+| 维度 | 文件 | 更新频率 | 内容类型 |
+|------|------|---------|---------|
+| A_core | `_persona/A_core.md` | 月级 | 核心价值观/长期目标/性格底层 |
+| B_filter | `_persona/B_filter.md` | 周级微调 | 审美/品味/认知偏好/风格原则 |
+| C_domain | `_persona/C_domain.md` | 半自动 | 专业身份标签/已验证判断/深入领域 |
+| D_trajectory | `_persona/D_trajectory.md` | 每周重写 | 当前优先级/焦虑点/未竟之事 |
+
+**板块 5 — 下周聚焦（Stop/Start/Continue）**
+
+对话确认后，直接写入 D_trajectory：
+
+```
+python agents/review_agent.py --action update_persona \
+  --dimension D_trajectory \
+  --input "Stop：...\nStart：...\nContinue：...\n3个优先级：..." \
+  --source-ref "复盘 <日期>" \
+  --vault "YOUR_VAULT_PATH"
+```
+
+**结束：写入复盘日志**
+
+```
+python agents/review_agent.py --action close_review --vault "YOUR_VAULT_PATH"
+```
+
+**核心约束（不可妥协）：**
+- 严禁直接用 Write/Edit 工具写入 `_persona/` — 必须通过 `update_persona` action
+- `_persona/` 只有用户明确确认后才能写入
+
+---
+
 ## 炼金术技能（Alchemy Agent）
 
 当用户输入包含以下任意触发词时：
