@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 记忆宫殿复盘 Agent
 
@@ -29,6 +30,12 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
+
+# Windows 下强制 stdout 使用 UTF-8，避免 GBK 编码错误
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 load_dotenv()
 
@@ -155,7 +162,7 @@ SCAN_PROMPT = """
 
 ---
 
-## 8 个扫描雷达
+## 10 个扫描雷达
 
 **高价值内容雷达（4 类）：**
 - [本质理解] 对事物本质的新认知（"原来 X 的底层逻辑是..."）
@@ -168,6 +175,15 @@ SCAN_PROMPT = """
 - [B_filter] 审美/品味/认知偏好的变化信号
 - [C_domain] 专业技能/领域认知的新增或更新
 - [D_trajectory] 当前优先级/焦虑点/未竟之事的变化
+
+**心理考古雷达（2 类）：**
+- [反向信号] 用户频繁提到但回避解决的问题？频繁自我否定的具体领域？（"技术差"/"啥也做不到"/"还算满意"等克制表述 = 核心信念障碍的信号）
+- [归因模式] 用户如何解释失败和成功？是否把组织/时机/系统问题内化为"我不行"？（过度自责 = A_core 层面待修正信念）
+
+**注意：** 若扫描内容包含 AI 对话记录（"外界素材"中的长文），请重点提取：
+1. 对话中用户的自我评价如何随对话演进
+2. 对话最终得出的核心结论句（如"你不缺X，你缺的是Y"这类定义句）
+3. 用户表示认同/感动的洞察（这些是已验证的深层信念）
 
 ---
 
@@ -182,6 +198,12 @@ SCAN_PROMPT = """
 ### Persona 候选更新
 
 （每条格式：`[A_core/B_filter/C_domain/D_trajectory] 变化描述 — 与现有 Persona 的关系（新增/冲突/强化）`，没有则写"本期未发现"）
+
+### 值得深挖的矛盾
+
+（列出 1-3 对具体矛盾——用户在不同来源说了相反的事。格式：
+`"[来源A] 的 '...' vs [来源B] 的 '...'——这个矛盾揭示了什么？"`
+没有则写"本期未发现"）
 
 ### 值得深聊的张力
 
@@ -263,7 +285,7 @@ def scan_week(vault: Path, start_date: str, end_date: str) -> dict:
                     data['sources'].append({
                         'project': proj.name,
                         'file': f.name,
-                        'content': f.read_text(encoding='utf-8')[:500]
+                        'content': f.read_text(encoding='utf-8')
                     })
 
     return data
