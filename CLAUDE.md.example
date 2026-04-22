@@ -4,116 +4,82 @@
 
 ---
 
-## 门房技能：日记归档（Portal Agent）
+## Vault 路径
 
-当用户输入包含以下任意触发词时：
-- `@日记`
-- `记下来` / `记录下来` / `记一下` / `记录一下` / `记一嘴`
-- 或消息包含 `日记`
-
-**执行步骤：**
-
-1. 提取用户要记录的完整内容（去掉触发词本身）
-2. 调用归档命令：
-   ```
-   python agents/portal_agent.py --input "<内容>" --vault "YOUR_VAULT_PATH"
-   ```
-3. 向用户确认归档成功，并告知写入的文件路径（如 `_raw_inbox/2026-04-12-14.md`）
-
-**核心约束（不可妥协）：**
-- Append-Only：严禁修改或删除 `_raw_inbox/` 中任何已写入内容
-- 白天只写 `_raw_inbox/`，不触碰 `日记/`、`_compiled/` 等其他目录
+```
+YOUR_VAULT_PATH
+```
 
 ---
 
-## 启动检查：学习提醒（每次对话自动执行）
+## 启动检查（每次对话自动执行）
 
-每次 Claude Code 对话**启动时**，静默执行：
-```
+静默执行，输出非空时主动向用户展示：
+
+```bash
 python agents/learning_agent.py --action check_and_notify --vault "YOUR_VAULT_PATH"
 ```
 
-如果输出**非空**，主动向用户展示提醒（例如：未关闭 session、未处理 highlights、搁置过久的问题）。
-如果输出为空，不做任何提示，继续正常对话。
+---
+
+## 门房技能（Portal Agent）
+
+**触发词：** `@日记` / `记下来` / `记录下来` / `记一下` / `记录一下` / `记一嘴` / 消息包含"日记"
+
+**核心约束：先判断内容归属**——"记下来"不等于门房，学习洞察走 learning_agent，日常生活/随想才走 portal_agent。
+
+```bash
+python agents/portal_agent.py --input "<内容>" --vault "YOUR_VAULT_PATH"
+```
+
+- Append-Only：严禁修改或删除 `_raw_inbox/` 中任何已写入内容
+
+详见 [claude-code-skills/diary-skill/SKILL.md](claude-code-skills/diary-skill/SKILL.md)
 
 ---
 
 ## 学习技能（Learning Agent）
 
-当用户输入包含以下任意触发词时：
-- `/学习`
-- `@学习`
+**触发词：** `/学习` / `@学习`
 
-**执行步骤：**
+```bash
+# 推荐项目
+python agents/learning_agent.py --action recommend --vault "YOUR_VAULT_PATH"
 
-1. 调用推荐命令，获取项目列表：
-   ```
-   python agents/learning_agent.py --action recommend --vault "YOUR_VAULT_PATH"
-   ```
-2. 向用户展示推荐项目 + 各项目的推荐模式，询问意图
-3. 用户选择项目和模式后，加载全量上下文：
-   ```
-   python agents/learning_agent.py --action load --project "<项目名>" --vault "YOUR_VAULT_PATH"
-   ```
-4. 开启 session，进入对应模式的交互流程（见 `claude-code-skills/learning-skill/SKILL.md`）
-
-**五种学习模式（用户选择，Claude 给建议）：**
-- **A — 画版图**：新话题/新书，提问框架→更新 map.md→生成理解题→逐题作答
-- **B — 回忆+推进**：不看笔记先回忆→对比 notes/→推进 questions.md 未解决问题
-- **C — 处理Highlights**：逐条过 highlights，问"你为什么划这句"→感知是否保存
-- **D — 复习旧笔记**：随机抽概念名自测→对比笔记→提议更新
-- **E — 问题驱动探索**：用户带着问题→先搜已有内容→报告缺口→决定归入项目
-
-**记录与保存（不依赖魔法词汇）：**
-
-#### 用户主动触发
-| 用户说 | Claude 处理 |
-|--------|-------------|
-| "记下来" | 根据内容提炼名字，保存到 `notes/` |
-| "存为笔记" | 同上 |
-| "这个要全记录" | 完整保存（到 `dialogue/` 或单独文件） |
-| "记下来，叫 XXX" | 用用户给的名字 |
-
-#### Claude 主动感知
-| 信号 | Claude 的提议 |
-|------|--------------|
-| 用户表达了清晰理解/洞察 | "这个值得记下来——给这个洞察起个名字？" |
-| 用户提出未解问题 | "这个问题记到你的问题池？" |
-| 讨论到一个结论 | "要不要存成今天的笔记？" |
-| 用户说"对对对就是这个意思" | "我来帮你把这个理解存下来，确认一下：<提炼版本>" |
-
-用户只需回复 **是/好/存/不用**。
-
-#### 归类规则
-| 内容类型 | 存放位置 | 使用命令 |
-|----------|----------|----------|
-| 概念/框架/方法论 | `项目/<项目名>/notes/` | `--action save_note --concept "<名>" --input "<内容>"` |
-| 对话全过程 | `项目/<项目名>/dialogue/` | `--action save_dialogue --input "<内容>"` |
-| 问题/困惑 | `项目/<项目名>/questions.md` | `--action append_question --input "<问题>"` |
-| 外部素材（视频/文章） | `_private_sources/<项目名>/` | 仅用户手动 |
-
-**严禁直接用 Write/Edit 工具写入项目文件**——必须通过 learning_agent.py 的对应 action，以确保 session 状态被正确追踪。
-
-**关闭 session：**
-用户说"结束"/"今天到这"/"归档关闭"等时，按以下顺序执行：
-
-**步骤一：主动询问是否保存对话**
-问用户："要把今天的对话存成 dialogue 吗？"
-确认后调用：
-```
-python agents/learning_agent.py --action save_dialogue --project "<项目名>" --input "<对话压缩摘要>" --vault "YOUR_VAULT_PATH"
+# 加载项目
+python agents/learning_agent.py --action load --project "<项目名>" --vault "YOUR_VAULT_PATH"
 ```
 
-**步骤二：回顾本次对话，检查遗漏**
-列出"我认为还未记录的洞察/问题"，逐一让用户确认：
-- 洞察/概念 → `save_note --concept "<名>" --input "<内容>"`
-- 未解问题 → `append_question --input "<问题>"`
+- 严禁直接用 Write/Edit 写入项目文件——必须通过 learning_agent.py 的对应 action
 
-**步骤三：调用 close_session**
+详见 [claude-code-skills/learning-skill/SKILL.md](claude-code-skills/learning-skill/SKILL.md)
+
+---
+
+## 复盘技能（Review Agent）
+
+**触发词：** `/复盘` / `开始复盘` / `周复盘`
+
+```bash
+python agents/review_agent.py --action scan --vault "YOUR_VAULT_PATH"
 ```
-python agents/learning_agent.py --action close_session --project "<项目名>" --vault "YOUR_VAULT_PATH"
+
+- 严禁直接用 Write/Edit 写入 `_persona/`——必须通过 `update_persona` action
+- `_persona/` 只有用户明确确认后才能写入
+
+详见 [claude-code-skills/review-skill/SKILL.md](claude-code-skills/review-skill/SKILL.md)
+
+---
+
+## 炼金术技能（Alchemy Agent）
+
+**触发词：** `/炼金` / `/批处理` / `运行炼金术`
+
+```bash
+python agents/alchemy_agent.py --action run --vault "YOUR_VAULT_PATH"
 ```
-close_session 会自动：扫描变更写入 `_log/`、更新 `map.md` 索引、写入 `_raw_inbox/` 摘要。
+
+详见 [claude-code-skills/alchemy-skill/SKILL.md](claude-code-skills/alchemy-skill/SKILL.md)
 
 ---
 
@@ -121,7 +87,7 @@ close_session 会自动：扫描变更写入 `_log/`、更新 `map.md` 索引、
 
 | 目录 | 写入权限 | 何时写入 |
 |------|----------|----------|
-| `_raw_inbox/` | Portal Agent（本 session） | 实时 |
+| `_raw_inbox/` | Portal Agent | 实时 |
 | `_private_sources/` | 仅用户手动 | 手动 |
 | `日记/` | 炼金术 Agent | 凌晨 T-1 批处理 |
 | `项目/` | 用户 + 学习 Agent | 主动发起 |
@@ -130,168 +96,3 @@ close_session 会自动：扫描变更写入 `_log/`、更新 `map.md` 索引、
 | `_log/` | 学习 Agent + 炼金术 Agent | session 关闭时 + T-1 批处理 |
 | `_social_graph/review/` | 战略复盘 Agent | 周末闭门会 |
 | `_persona/` | 战略复盘 Agent | 周末闭门会 |
-
----
-
-## 复盘技能（Review Agent）
-
-当用户输入包含以下任意触发词时：
-- `/复盘`
-- `开始复盘`
-- `周复盘`
-
-**首次运行 vs 常规运行：**
-
-- **首次运行**：`_persona/` 尚未初始化时，扫描全量历史数据，生成 Persona 基准版本（v1.0）
-- **常规运行**：每周日，只扫描本周新增/变更内容，与现有 Persona 对比
-
-**执行步骤：**
-
-**板块 0 — 矛盾预标记（2 分钟，扫描前）**
-
-在运行 scan 之前，先问用户：
-> "这段时间有没有哪件事，你觉得'自己不行'或'差一点'？说 1-3 个。"
-
-把这些作为**深挖优先级**，在接下来的扫描和对话里，主动寻找与这些自评相矛盾的证据。
-
-**板块 1 — AI 摊牌（扫描）**
-
-```
-# 首次运行
-python agents/review_agent.py --action scan --first-run --start-date <起始日期> --vault "YOUR_VAULT_PATH"
-
-# 常规扫描
-python agents/review_agent.py --action scan --vault "YOUR_VAULT_PATH"
-```
-
-向用户展示 8 雷达发现，格式：
-- `[本质理解/跨域模式/决策背景/价值观碰撞]` 高价值内容 → 引入板块 4 讨论素材
-- `[A_core/B_filter/C_domain/D_trajectory]` Persona 候选更新 → 板块 4 逐维度确认
-- 值得深聊的张力 → 引出 Socratic questioning
-
-**板块 2 — 本周得失（GRAI 框架）**
-
-直接在 Claude Code 对话中进行，无需调用 agent：
-- G（Goal）：这周设定了什么目标？
-- R（Result）：实际发生了什么？差距在哪？
-- A（Analysis）：成败的关键因素是什么？
-- I（Insight）：这背后有什么规律？
-
-**板块 3 — 能量与状态**
-
-直接在 Claude Code 对话中进行，无需调用 agent：
-- 充电时刻：什么事情做完后精力更足？
-- 耗电时刻：什么事情做完后很空洞？
-
-**板块 4 — Persona 更新（核心）**
-
-逐维度讨论，用户说"记下来"/"更新"/"确认"时调用：
-
-```
-python agents/review_agent.py --action update_persona \
-  --dimension <A_core|B_filter|C_domain|D_trajectory> \
-  --input "<内容>" \
-  --source-ref "复盘 <日期>" \
-  --vault "YOUR_VAULT_PATH"
-```
-
-**`--input` 必须使用以下 Markdown 格式（不得传入无结构散文）：**
-
-```markdown
-### [洞察名称]
-> 来源：[复盘日期 · 板块名]
-
-**一句话：** [核心结论，一句话]
-
-- [要点1]
-- [要点2]
-- **[标签]：** [补充说明]
-
-⚠️ [可选：待深化/待验证 的标注]
-```
-
-4 个维度写入规则：
-
-| 维度 | 文件 | 更新频率 | 内容类型 |
-|------|------|---------|---------|
-| A_core | `_persona/A_core.md` | 月级 | 核心价值观/长期目标/性格底层 |
-| B_filter | `_persona/B_filter.md` | 周级微调 | 审美/品味/认知偏好/风格原则 |
-| C_domain | `_persona/C_domain.md` | 半自动 | 专业身份标签/已验证判断/深入领域 |
-| D_trajectory | `_persona/D_trajectory.md` | 每周重写 | 当前优先级/焦虑点/未竟之事 |
-
-**板块 5 — 下周聚焦（Stop/Start/Continue）**
-
-对话确认后，直接写入 D_trajectory：
-
-```
-python agents/review_agent.py --action update_persona \
-  --dimension D_trajectory \
-  --input "Stop：...\nStart：...\nContinue：...\n3个优先级：..." \
-  --source-ref "复盘 <日期>" \
-  --vault "YOUR_VAULT_PATH"
-```
-
-**板块 6 — 深挖张力（可选，20-30 分钟）**
-
-**触发条件：** 扫描发现"值得深挖的矛盾"不为空，或用户主动说"我想把这个挖透"。
-
-**执行步骤：**
-
-1. Claude 呈现"矛盾快照"——从 AI 对话和日记里提取对立论述，逐一展示给用户
-2. Claude 主导 Socratic questioning（Claude 提问，不是等用户主动说）：
-   - "你在 X 地方说'...'，在 Y 地方你做了 Z。这两件事怎么共存？"
-   - "如果这个判断是错的，什么证据能说服你？"
-   - "这个感受最早是什么时候出现的？"
-3. 持续追问，直到用户说出"对，就是这个"——那句话就是洞察
-4. Claude 先说那句话，再问用户是否写入 Persona：
-   > "我想把'...'写进 A_core，你看这个说法准不准？"
-5. 用户确认后，格式化为标准 update_persona 格式调用 agent
-
-**结束：写入复盘日志**
-
-```
-python agents/review_agent.py --action close_review --vault "YOUR_VAULT_PATH"
-```
-
-**核心约束（不可妥协）：**
-- 严禁直接用 Write/Edit 工具写入 `_persona/` — 必须通过 `update_persona` action
-- `_persona/` 只有用户明确确认后才能写入
-
----
-
-## 炼金术技能（Alchemy Agent）
-
-当用户输入包含以下任意触发词时：
-- `/炼金`
-- `/批处理`
-- `运行炼金术`
-
-**执行步骤：**
-
-1. 调用批处理命令（默认处理昨天的数据）：
-   ```
-   python agents/alchemy_agent.py --action run --vault "YOUR_VAULT_PATH"
-   ```
-2. 向用户展示各阶段执行结果
-
-**六阶段流水线：**
-1. **编纂日记**：读取 T-1 `_raw_inbox/` → `日记/{date}.md`
-2. **萃取金砖**：从日记/项目变动提取核心洞察
-3. **读取变更报告**：从 `_log/` 读取昨日学习 session 的变更
-4. **编译跨域索引**：更新 `_index.md` 和 `_compiled/`
-5. **记录人际互动**：→ `_social_graph/log/`
-6. **记录体征数据**：→ `_biometrics/log/`
-7. **Lint 巡检**：→ `_lint_report/{date}.md`
-
-**手动触发子任务：**
-- `--action compile_diary` - 仅编纂日记
-- `--action update_index` - 仅更新全局索引
-- `--action lint` - 仅 Lint 检查
-
----
-
-## Vault 路径
-
-```
-YOUR_VAULT_PATH
-```
