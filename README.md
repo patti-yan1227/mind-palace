@@ -97,8 +97,9 @@ Step 2 T-1 静默炼金（记录机器，不做战略判断）
 
 Step 3 每周日复盘（合伙人 1v1 会议）
   复盘 Agent 启动：
-  → 8 雷达扫描本周全量（日记 + 笔记 + 素材 + 互动 + 体征）
-  → 5 板块对话式推进（AI 摊牌→GRAI→能量→Persona→下周聚焦）
+  → 10 雷达扫描全量（日记 + 笔记 + AI 对话全文 + 互动 + 体征；含心理考古雷达）
+  → 6 板块对话式推进（矛盾预标记→AI 摊牌→GRAI→能量→Persona→下周聚焦）
+  → 可选板块6 深挖张力（Socratic 考古，挖出"就是这个"的洞察）
   → 用户确认后写入 `_persona/` + 溯源 backlink
 ```
 
@@ -111,7 +112,7 @@ Step 3 每周日复盘（合伙人 1v1 会议）
 | 1 | **门房 Portal** | 极速调度 | `_raw_inbox/` | 接收原始输入→原封不动 append 至 `_raw_inbox/{date}.md` → 领域打标 → 广播至消息总线 |
 | 2 | **学习读书 Agent** | 用户主动发起 | `项目/` | 交互式学伴，NotebookLM 式深度共读。**六种模式**（A 画版图/B 回忆 + 推进/C 处理 Highlights/D 复习测试/E 问题探索/F 四步学习法） |
 | 3 | **炼金术 Agent** | 凌晨 00:00 T-1 批处理 | `日记/` `_compiled/` `_social_graph/log/` `_biometrics/log/` `_index.md` `_log/` | 五阶段流水线（记录机器，不做战略判断） |
-| 4 | **复盘 Agent** | 每周日用户主动触发 | `_persona/`（经用户确认） | 8 雷达扫描→5 板块合伙人 1v1 复盘→Merge to Master |
+| 4 | **复盘 Agent** | 每周日用户主动触发 | `_persona/`（经用户确认） | 10 雷达扫描（含心理考古雷达）→6 板块合伙人 1v1 复盘（板块0 矛盾预标记 + 板块6 深挖张力）→Persona 写入 |
 | 5 | **检索问答 Agent** | 按需触发 | 无 (全库只读) | 以 `_index.md` 为入口，读取全部房间（含私人区） |
 | 6 | **情报收集 Agent** | 后台定时/按需触发 | `_private_sources/` + 临时缓冲区 | 自动搜集用户指定主题的外部信息（论文/新闻/报告） |
 | 7 | **Patti 管家 Agent** | 实时 | 无（路由层） | 意图识别、任务路由、多 Agent 编排、用户确认流程 |
@@ -204,7 +205,7 @@ ALCHEMY_USE_LLM=true
 |-------|------|------|
 | Phase 1 | 门房 Portal + raw_inbox 归档 | ✅ 完成 |
 | Phase 2 | 炼金术 Agent 五阶段流水线 | ✅ 完成（记录功能已实现） |
-| Phase 3 | 复盘 Agent | ✅ 核心功能实现（8 雷达扫描 +5 板块流程+Persona 写入） |
+| Phase 3 | 复盘 Agent | ✅ 完成（10 雷达扫描 + 6 板块流程 + 心理考古 + 深挖张力 + Persona 写入） |
 | Phase 4 | 自动化演进路线 | 📋 设计中 |
 | Phase 5 | 学习读书 Agent（交互式学伴） | ✅ 六种模式完成 |
 | Phase 6 | 情报收集 Agent | 📋 设计预留 |
@@ -226,6 +227,7 @@ ALCHEMY_USE_LLM=true
 | v2.5 | 2026-04-14 | 四步学习法 (模式 F) + 素材自动检测 |
 | v2.6 | 2026-04-14 | **职责澄清**：炼金术记录 vs 复盘洞察 |
 | v2.7 | 2026-04-17 | **Patti 管家 Agent 实现**：意图识别、多 Agent 编排、用户确认流程 |
+| v2.8 | 2026-04-23 | **复盘 Agent 深度升级**：AI 对话全文读取、心理考古雷达（反向信号/归因模式）、矛盾检测、板块0矛盾预标记、板块6 Socratic 深挖协议、Windows UTF-8 修复 |
 
 ### 下一步工作
 
@@ -287,6 +289,6 @@ ALCHEMY_USE_LLM=true
 
 ---
 
-**Version**: 1.0.0 (Phase 2 Complete)  
+**Version**: 2.8.0 (Phase 3 Complete)  
 **Author**: patti-yan1227  
 **License**: MIT
