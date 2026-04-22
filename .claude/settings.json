@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"systemMessage\": \"[Patti 提醒] 对话即将结束——请回顾本次完成了哪些待办事项，并更新 memory/project_pending_2026-04-19.md，把已完成的打勾、新增的补进去。\"}'",
+            "shell": "bash"
+          }
+        ]
+      }
+    ]
+  }
+}
