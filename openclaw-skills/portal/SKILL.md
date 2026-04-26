@@ -1,13 +1,13 @@
 ---
-name: mind-palace-portal
-description: 记忆宫殿门房 - 实时归档原始输入
+name: mind-palace-patti
+description: MindPalace 管家 - 意图识别 + 路由到对应 Agent
 author: patti-yan1227
-version: 1.0.0
+version: 2.0.0
 
-# 触发条件：所有消息都归档
+# 触发条件：所有消息都经过 Patti 路由
 triggers:
   - keywords:
-      - "*"  # 所有消息都触发
+      - "*"
 
 config:
   - name: OBSIDIAN_VAULT
@@ -19,37 +19,39 @@ config:
     default: "_raw_inbox"
 ---
 
-# 记忆宫殿门房 Portal
+# MindPalace 管家 Patti
 
 ## 职责
 
-1. 接收所有原始输入（飞书/微信/Telegram 等）
-2. 原封不动 append 到 `_raw_inbox/{date}.md`
-3. 添加时间戳 `[HH:MM]`
-4. 广播到消息总线（供其他 Agent 消费）
+1. 接收所有消息，进行意图识别
+2. 路由到对应的子 Agent：
+   - 日记/随手记 → `portal_agent`，归档到 `_raw_inbox/`
+   - `/炼金` → `alchemy_agent`，批处理原始输入
+   - `/复盘` → `review_agent --action scan`，输出本周扫描摘要
+   - 学习相关 → `learning_agent`
+   - 复杂任务 → 多角色 LLM 编排
 
-## 写入格式
+## 触发方式
 
-```markdown
-## 2026-04-09
+所有消息均触发（catch-all）。
 
-[09:15] 今天状态不错，开始搞新系统
-[10:30] 门房逻辑跑通了，记录一下
-[14:20] 发现个问题，raw_inbox 可能会爆炸
-```
+## 子 Agent
 
-## 工程约束
-
-- 按小时分块：`_raw_inbox/2026-04-09-14.md`（防止 Token 爆炸）
-- Append-Only：严禁修改已写入内容
-- 时间戳格式：`[HH:MM]`
+| Agent | 职责 | 触发关键词 |
+|-------|------|------------|
+| portal_agent | 归档原始输入 | 日记/记下来/随手记 |
+| alchemy_agent | 批量炼金 | /炼金、/批处理 |
+| review_agent | 复盘扫描 | /复盘、周复盘 |
+| learning_agent | 学习路由 | /学习 |
 
 ## 相关文件
 
-- `_SYSTEM_RULES.md` - 系统统一规则
-- `agents/portal_agent.py` - 门房核心逻辑
+- `agents/patti_agent.py` - 管家核心逻辑
+- `agents/portal_agent.py` - 门房归档
+- `agents/alchemy_agent.py` - 炼金术
+- `agents/review_agent.py` - 复盘扫描
 
 ---
 
-**Skill ID**: `mind-palace-portal`  
-**Version**: 1.0.0
+**Skill ID**: `mind-palace-patti`  
+**Version**: 2.0.0

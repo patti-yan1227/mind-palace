@@ -62,23 +62,33 @@ def get_role_system_prompt(role_name: str) -> str:
 
 
 def call_llm(prompt: str, system: str = None) -> str:
-    """调用 LLM API"""
+    """调用 LLM API（支持 DeepSeek/OpenAI 兼容接口 + Anthropic）"""
     try:
-        from anthropic import Anthropic
-        client = Anthropic(api_key=LLM_API_KEY, base_url=LLM_API_BASE_URL)
-
-        kwargs = dict(
-            model=LLM_MODEL,
-            max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        if system:
-            kwargs['system'] = system
-
-        response = client.messages.create(**kwargs)
-        return response.content[0].text
-    except ImportError:
-        return "错误：请安装 anthropic SDK: pip install anthropic"
+        if 'deepseek' in LLM_API_BASE_URL or 'openai' in LLM_API_BASE_URL:
+            from openai import OpenAI
+            client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_API_BASE_URL)
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
+            response = client.chat.completions.create(
+                model=LLM_MODEL, max_tokens=4096, messages=messages
+            )
+            return response.choices[0].message.content or ''
+        else:
+            from anthropic import Anthropic
+            client = Anthropic(api_key=LLM_API_KEY, base_url=LLM_API_BASE_URL)
+            kwargs = dict(
+                model=LLM_MODEL,
+                max_tokens=4096,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            if system:
+                kwargs['system'] = system
+            response = client.messages.create(**kwargs)
+            return response.content[0].text
+    except ImportError as e:
+        return f"错误：缺少依赖 {e}"
     except Exception as e:
         return f"LLM 调用失败：{e}"
 

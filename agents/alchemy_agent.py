@@ -151,36 +151,42 @@ def _fill_concept_template(concept_name: str, sources: list, related: list, crea
 
 def llm_generate(prompt: str) -> str:
     """
-    调用 LLM 生成内容（支持 Anthropic 兼容接口，如通义千问）
+    调用 LLM 生成内容（支持 Anthropic 兼容接口和 OpenAI 兼容接口）
     """
     try:
-        from anthropic import Anthropic
-        client = Anthropic(api_key=LLM_API_KEY, base_url=LLM_API_BASE_URL)
-        response = client.messages.create(
-            model=LLM_MODEL,
-            max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        # 处理返回内容（兼容不同 LLM 的返回格式）
-        # 通义千问可能返回 ThinkingBlock 和 TextBlock 的混合
-        result_parts = []
-        for block in response.content:
-            block_type = getattr(block, 'type', None)
-            # 跳过 thinking 块，只保留 text 块
-            if block_type == 'thinking':
-                continue
-            elif block_type == 'text':
-                result_parts.append(getattr(block, 'text', ''))
-            elif hasattr(block, 'text'):
-                result_parts.append(block.text)
-            else:
-                # 其他类型尝试直接获取内容
-                result_parts.append(str(block))
-        return ''.join(result_parts)
-    except ImportError:
-        raise ImportError(
-            "请安装 anthropic SDK: pip install anthropic"
-        )
+        # OpenAI 兼容接口（DeepSeek 等）
+        if 'deepseek' in LLM_API_BASE_URL or 'openai' in LLM_API_BASE_URL:
+            from openai import OpenAI
+            client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_API_BASE_URL)
+            response = client.chat.completions.create(
+                model=LLM_MODEL,
+                max_tokens=4096,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.choices[0].message.content or ''
+        # Anthropic 兼容接口
+        else:
+            from anthropic import Anthropic
+            client = Anthropic(api_key=LLM_API_KEY, base_url=LLM_API_BASE_URL)
+            response = client.messages.create(
+                model=LLM_MODEL,
+                max_tokens=4096,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            result_parts = []
+            for block in response.content:
+                block_type = getattr(block, 'type', None)
+                if block_type == 'thinking':
+                    continue
+                elif block_type == 'text':
+                    result_parts.append(getattr(block, 'text', ''))
+                elif hasattr(block, 'text'):
+                    result_parts.append(block.text)
+                else:
+                    result_parts.append(str(block))
+            return ''.join(result_parts)
+    except ImportError as e:
+        raise ImportError(f"请安装依赖 SDK: {e}")
     except Exception as e:
         raise RuntimeError(f"LLM 调用失败：{e}")
 
